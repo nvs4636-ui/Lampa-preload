@@ -7,7 +7,7 @@
 
     const TSPreload = {
         name: 'TorrServe Smart Preload',
-        version: '1.3.0',
+        version: '1.5.0',
         author: 'Hiền',
 
         init() {
@@ -20,8 +20,15 @@
                 onBack: () => Lampa.Settings.update()
             });
 
-            // Theo dõi sự kiện chọn torrent
+            // Thêm nút "Play trực tiếp" vào menu torrent
             Lampa.Listener.follow('torrent', (event) => {
+                if (event.type === 'menu') {
+                    event.data.push({
+                        title: '▶ Play trực tiếp (TorrServe)',
+                        subtitle: 'Phát ngay qua stream/start',
+                        onSelect: () => this.startStream(event.torrent)
+                    });
+                }
                 if (event.type === 'select') {
                     this.preload(event.data);
                 }
@@ -42,7 +49,19 @@
                 console.log('[TS Preload] Server URL cập nhật:', serverUrl);
             });
 
+            // Nút test connection
+            let btn = $('<button style="margin-top:10px;">Test Connection</button>');
+            btn.on('click', () => {
+                fetch(serverUrl + '/stream/start', { method: 'GET' })
+                    .then(r => {
+                        if (r.ok) alert('✅ TorrServe hoạt động!');
+                        else alert('❌ TorrServe không phản hồi');
+                    })
+                    .catch(() => alert('❌ Không kết nối được TorrServe'));
+            });
+
             ui.append(input);
+            ui.append(btn);
 
             return ui;
         },
@@ -54,7 +73,7 @@
 
             console.log('[TS Preload] Preload', size, 'MB');
 
-            fetch(serverUrl + '/preload', {
+            fetch(serverUrl + '/stream/start', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -65,6 +84,29 @@
                 })
             }).catch(err => {
                 console.error('[TS Preload] Lỗi preload:', err);
+            });
+        },
+
+        startStream(torrent) {
+            if (!torrent || !torrent.url) return;
+
+            console.log('[TS Preload] Play trực tiếp:', torrent.url);
+
+            fetch(serverUrl + '/stream/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    link: torrent.url,
+                    preload: 300 // preload mặc định khi play trực tiếp
+                })
+            })
+            .then(() => {
+                alert('▶ Đã gửi yêu cầu phát trực tiếp đến TorrServe');
+            })
+            .catch(err => {
+                console.error('[TS Preload] Lỗi play trực tiếp:', err);
             });
         },
 
