@@ -13,7 +13,7 @@
 
     // Настройки плагина с автоматическим определением адреса TorrServer
     var Settings = {
-        torrserve_host: 'http://192.168.3.41:8090', // Ваш адрес по умолчанию
+        torrserve_host: 'gren439e.tsarea.tv:8880', // Ваш адрес по умолчанию
         auto_calculate: Lampa.Storage.get('smart_preload_auto', true),
         default_percent: Lampa.Storage.get('smart_preload_percent', 50),
         preload_timeout: Lampa.Storage.get('smart_preload_timeout', 30), // минут
@@ -40,8 +40,8 @@
                     if (selectedUrl && !selectedUrl.startsWith('http')) {
                         selectedUrl = 'http://' + selectedUrl;
                     }
-                    if (selectedUrl && !selectedUrl.includes(':8090') && !selectedUrl.includes(':')) {
-                        selectedUrl = selectedUrl + ':8090';
+                    if (selectedUrl && !selectedUrl.includes(':8880') && !selectedUrl.includes(':')) {
+                        selectedUrl = selectedUrl + ':8880';
                     }
                     console.log('[Settings] Используем адрес TorrServer из настроек Lampa:', selectedUrl);
                     return selectedUrl;
