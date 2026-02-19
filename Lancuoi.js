@@ -113,14 +113,14 @@
         calcSize(torrent) {
             const q = torrent.quality || '';
 
-            if (q.includes('2160')) return 600;   // 4K
-            if (q.includes('1080')) return 350;   // Full HD
-            if (q.includes('720')) return 220;    // HD
-
+            if (q.includes('2160')) return 600;  // 4K
+            if (q.includes('1080')) return 350;  // Full HD
+            if (q.includes('720')) return 220;   // HD
             return 150; // mặc định
         }
     };
 
+    // Đăng ký plugin với Lampa
     Lampa.Plugin.add(TSPreload.name, TSPreload);
     TSPreload.init();
 })();
