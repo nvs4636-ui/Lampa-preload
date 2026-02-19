@@ -5,7 +5,7 @@
 
     let serverUrl = Lampa.Storage.get('ts_preload_server', 'https://gren439e.tsarea.tv:8443');
 
-    const TSPreload = {
+    const Lampa.Plugin.add(TSPreload.name, TSPreload); TSPreload = {
         name: 'TorrServe Smart Preload',
         version: '1.5.0',
         author: 'Hiền',
