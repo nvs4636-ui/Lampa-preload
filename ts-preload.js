@@ -3,66 +3,47 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX Preload + RU Safe Title] Loaded');
+    console.log('[MX Preload RU FIX] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
 
-    // ===== DETECT CYRILLIC =====
+    // ===== CYRILLIC DETECT =====
     function hasCyrillic(text) {
         return /[А-Яа-яЁё]/.test(text);
     }
 
-    // ===== CLEAN & FORMAT TITLE (ANTI-RU / UHD FIX) =====
+    // ===== CLEAN & FORMAT TITLE (SAFE) =====
     function formatTitle(e) {
         var title = '';
 
-        // 1️⃣ Ưu tiên original_title (TMDB - tiếng Anh)
         if (e.original_title && !hasCyrillic(e.original_title)) {
             title = e.original_title;
         } else {
-            title = e.title || 'Lampa Torrent';
+            title = e.title || 'Movie';
         }
 
-        // Chuẩn hóa
         title = title.replace(/[._]/g, ' ');
-
-        // ❌ Xóa toàn bộ Cyrillic
         title = title.replace(/[А-Яа-яЁё]/g, '');
 
-        // ❌ Xóa tag kỹ thuật (FULL)
-        title = title.replace(/\b(
-            uhd|4k|2160p|1080p|720p|
-            x264|x265|h264|h265|hevc|avc|
-            sdr|hdr|hdr10|hdr10\+|dolby\s?vision|dv|
-            webrip|web\-dl|bluray|brrip|remux|
-            aac|ac3|eac3|ddp|dts|truehd|
-            atmos|10bit|8bit|
-            rus|eng|multi|
-            lq|hq
-        )\b/gi, '');
+        // ❌ TAG REMOVAL (ONE LINE REGEX - SAFE)
+        title = title.replace(/\b(uhd|4k|2160p|1080p|720p|x264|x265|h264|h265|hevc|avc|sdr|hdr|hdr10|hdr10\+|dolby\s?vision|dv|webrip|web\-dl|bluray|brrip|remux|aac|ac3|eac3|ddp|dts|truehd|atmos|10bit|8bit|rus|eng|multi|lq|hq)\b/gi, '');
 
-        // ❌ Xóa nội dung trong [] và ()
         title = title.replace(/\[[^\]]*\]|\([^\)]*\)/g, '');
-
-        // Dọn sạch
         title = title.replace(/\s+/g, ' ').trim();
 
-        // Series
         if (e.season && e.episode) {
-            return title +
-                ' S' + String(e.season).padStart(2, '0') +
+            return title + ' S' + String(e.season).padStart(2, '0') +
                 'E' + String(e.episode).padStart(2, '0');
         }
 
-        // Movie có năm
         if (e.year) {
             return title + ' (' + e.year + ')';
         }
 
-        return title || 'Movie';
+        return title;
     }
 
-    // ===== PRELOAD (LOW BUFFER ~32MB) =====
+    // ===== PRELOAD TIME (CACHE ~32MB) =====
     function getPreloadTime(size) {
         if (!size) return 5;
         var gb = size / (1024 * 1024 * 1024);
@@ -83,7 +64,7 @@
         var preload = getPreloadTime(size);
         var cleanTitle = formatTitle(e);
 
-        console.log('[MX RU SAFE]', cleanTitle);
+        console.log('[MX PRELOAD]', cleanTitle);
 
         Lampa.Player.stop();
 
