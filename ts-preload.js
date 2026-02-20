@@ -3,52 +3,54 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX XPLAYER MODE] Loaded');
+    console.log('[MX PRELOAD + AUTO COPY] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
 
-    // ===== BUILD TMDB TITLE ONLY =====
+    // ===== BUILD CLEAN TITLE (TMDB ONLY) =====
     function buildTitle(e) {
-
         var title = '';
 
-        // Movie
         if (e.original_title) {
             title = e.original_title;
-        }
-        // Series fallback
-        else if (e.name) {
+        } else if (e.name) {
             title = e.name;
-        }
-        else {
+        } else {
             title = 'Movie';
         }
 
-        // Series format
         if (e.season && e.episode) {
             title += ' S' + String(e.season).padStart(2, '0') +
                      'E' + String(e.episode).padStart(2, '0');
-        }
-        // Movie year
-        else if (e.year) {
-            title += '.' + e.year;
+        } else if (e.year) {
+            title += ' ' + e.year;
         }
 
         return title;
     }
 
-    // ===== FAKE FILENAME INTO STREAM URL =====
-    function buildFakeUrl(url, title) {
+    // ===== COPY TO CLIPBOARD =====
+    function copyToClipboard(text) {
+        try {
+            if (window.Android && Android.setClipboard) {
+                Android.setClipboard(text);
+            } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(text);
+            }
+            console.log('[CLIPBOARD]', text);
+        } catch (e) {
+            console.log('Clipboard error', e);
+        }
+    }
 
-        // Clean title for filename
+    // ===== FAKE FILENAME FOR MX (OPTIONAL BUT HELPS) =====
+    function fakeUrl(url, title) {
         var safe = title
             .replace(/[^a-z0-9\s.]/gi, '')
             .replace(/\s+/g, '.');
 
-        // If already has extension → skip
         if (/\.(mkv|mp4|avi)$/i.test(url)) return url;
 
-        // Append fake filename
         if (url.indexOf('?') > -1) {
             return url.replace('?', '/' + safe + '.mkv?');
         } else {
@@ -74,16 +76,24 @@
         if (!/torrserver|\/stream\//i.test(e.url)) return;
 
         var title = buildTitle(e);
-        var url   = buildFakeUrl(e.url, title);
+        var url   = fakeUrl(e.url, title);
         var size  = e.size || (e.torrent && e.torrent.size);
         var wait  = preloadTime(size);
 
-        console.log('[MX XPLAYER]', title);
+        // 👉 AUTO COPY TITLE
+        copyToClipboard(title);
 
-        // Stop default player
+        // 👉 Thông báo nhẹ
+        if (Lampa.Noty) {
+            Lampa.Noty.show('Đã copy tên phim: ' + title);
+        }
+
+        console.log('[MX START]', title);
+
+        // Stop player mặc định
         Lampa.Player.stop();
 
-        // Preload delay
+        // Preload rồi mới mở MX
         setTimeout(function () {
             openMX(url, title);
         }, wait * 1000);
@@ -91,15 +101,12 @@
 
     // ===== OPEN MX PLAYER =====
     function openMX(url, title) {
-
         var intent = {
             action: 'android.intent.action.VIEW',
             type: 'video/*',
             package: MX_PACKAGE,
             data: url,
-            extras: {
-                title: title
-            }
+            extras: { title: title }
         };
 
         if (window.Android && Android.startActivity) {
