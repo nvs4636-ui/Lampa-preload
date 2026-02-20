@@ -3,46 +3,39 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX Torrent Preload Remote] Loaded');
+    console.log('[MX Torrent Preload FIX] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
 
-    // ===== SETTINGS =====
-    var settings = {
-        enabled: true
-    };
+    var STORAGE_KEY = 'mx_torrent_preload_enabled';
 
-    function loadSettings() {
-        var saved = Lampa.Storage.get('mx_torrent_preload');
-        if (saved) settings = saved;
+    // ===== LOAD / SAVE =====
+    function isEnabled() {
+        var v = Lampa.Storage.get(STORAGE_KEY);
+        return v === null ? true : v;
     }
 
-    function saveSettings() {
-        Lampa.Storage.set('mx_torrent_preload', settings);
+    function setEnabled(v) {
+        Lampa.Storage.set(STORAGE_KEY, v);
     }
 
-    loadSettings();
-
-    // ===== MENU =====
-    Lampa.Settings.add({
-        id: 'mx_torrent_preload',
-        title: 'MX Torrent Preload',
-        icon: 'cloud_download',
-        params: [
-            {
-                id: 'enabled',
-                title: 'Bật preload torrent (remote)',
-                type: 'toggle',
-                value: settings.enabled,
-                onchange: function (value) {
-                    settings.enabled = value;
-                    saveSettings();
-                }
-            }
-        ]
+    // ===== SETTINGS MENU (CORRECT API) =====
+    Lampa.SettingsApi.addParam({
+        component: 'player',
+        param: {
+            name: 'MX Torrent Preload',
+            type: 'toggle',
+            default: true
+        },
+        onChange: function (value) {
+            setEnabled(value);
+        },
+        onRender: function (item) {
+            item.value = isEnabled();
+        }
     });
 
-    // ===== PRELOAD TIME (REMOTE OPTIMIZED) =====
+    // ===== PRELOAD TIME =====
     function getPreloadTime(size) {
         if (!size) return 8;
 
@@ -60,16 +53,14 @@
         if (e.type !== 'start') return;
         if (!e.url) return;
 
-        // chỉ torrent stream
         if (!/torrserver|\/stream\//i.test(e.url)) return;
 
-        var preload = settings.enabled;
+        var enabled = isEnabled();
         var size = e.size || (e.torrent && e.torrent.size);
-        var preloadTime = preload ? getPreloadTime(size) : 0;
+        var preloadTime = enabled ? getPreloadTime(size) : 0;
 
         console.log('[MX Torrent Preload]', {
-            enabled: preload,
-            size: size,
+            enabled: enabled,
             preload: preloadTime
         });
 
@@ -80,7 +71,7 @@
         }, preloadTime * 1000);
     });
 
-    // ===== OPEN MX PLAYER =====
+    // ===== OPEN MX =====
     function openMX(url, title) {
         var intent = {
             action: 'android.intent.action.VIEW',
