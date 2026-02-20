@@ -3,27 +3,34 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX Preload + Title Format] Loaded');
+    console.log('[MX Preload + Clean Title] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
 
-    // ===== FORMAT TITLE FOR MX (VERY IMPORTANT) =====
+    // ===== CLEAN & FORMAT TITLE (FIX x264 / SDR / HDR / DV) =====
     function formatTitle(e) {
         var title = e.title || 'Lampa Torrent';
 
-        // Remove common junk
-        title = title.replace(/\b(1080p|720p|2160p|4k|x264|x265|h264|h265|webrip|web-dl|bluray|hdr|dv)\b/gi, '')
-                     .replace(/\.+/g, ' ')
-                     .trim();
+        // Chuẩn hóa dấu phân cách
+        title = title.replace(/[._]/g, ' ');
+
+        // Xóa tag kỹ thuật
+        title = title.replace(/\b(480p|720p|1080p|2160p|4k|x264|x265|h264|h265|hevc|avc|sdr|hdr|hdr10|hdr10\+|dolby\s?vision|dv|webrip|web\-dl|bluray|brrip|remux|aac|ac3|eac3|ddp|dts|truehd|5\.1|7\.1|yify|rarbg|ettv)\b/gi, '');
+
+        // Xóa nội dung trong ngoặc có tag rác
+        title = title.replace(/\[[^\]]*\]|\([^\)]*(1080p|720p|x264|x265|hdr|sdr)[^\)]*\)/gi, '');
+
+        // Dọn khoảng trắng
+        title = title.replace(/\s+/g, ' ').trim();
 
         // Series
         if (e.season && e.episode) {
-            return title
-                + ' S' + String(e.season).padStart(2, '0')
-                + 'E' + String(e.episode).padStart(2, '0');
+            return title +
+                ' S' + String(e.season).padStart(2, '0') +
+                'E' + String(e.episode).padStart(2, '0');
         }
 
-        // Movie with year
+        // Movie có năm
         if (e.year) {
             return title + ' (' + e.year + ')';
         }
@@ -49,21 +56,24 @@
         if (e.type !== 'start') return;
         if (!e.url) return;
 
+        // Chỉ xử lý torrent
         if (!/torrserver|\/stream\//i.test(e.url)) return;
 
         var size = e.size || (e.torrent && e.torrent.size);
         var preload = getPreloadTime(size);
-        var title = formatTitle(e);
+        var cleanTitle = formatTitle(e);
 
         console.log('[MX]', {
-            title: title,
+            title: cleanTitle,
             preload: preload
         });
 
+        // Dừng player Lampa
         Lampa.Player.stop();
 
+        // Preload rồi mở MX
         setTimeout(function () {
-            openMX(e.url, title);
+            openMX(e.url, cleanTitle);
         }, preload * 1000);
     });
 
