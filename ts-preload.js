@@ -3,48 +3,61 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX Preload RU FIX] Loaded');
+    console.log('[MX XPLAYER MODE] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
 
-    // ===== CYRILLIC DETECT =====
-    function hasCyrillic(text) {
-        return /[А-Яа-яЁё]/.test(text);
-    }
+    // ===== BUILD TMDB TITLE ONLY =====
+    function buildTitle(e) {
 
-    // ===== CLEAN & FORMAT TITLE (SAFE) =====
-    function formatTitle(e) {
         var title = '';
 
-        if (e.original_title && !hasCyrillic(e.original_title)) {
+        // Movie
+        if (e.original_title) {
             title = e.original_title;
-        } else {
-            title = e.title || 'Movie';
+        }
+        // Series fallback
+        else if (e.name) {
+            title = e.name;
+        }
+        else {
+            title = 'Movie';
         }
 
-        title = title.replace(/[._]/g, ' ');
-        title = title.replace(/[А-Яа-яЁё]/g, '');
-
-        // ❌ TAG REMOVAL (ONE LINE REGEX - SAFE)
-        title = title.replace(/\b(uhd|4k|2160p|1080p|720p|x264|x265|h264|h265|hevc|avc|sdr|hdr|hdr10|hdr10\+|dolby\s?vision|dv|webrip|web\-dl|bluray|brrip|remux|aac|ac3|eac3|ddp|dts|truehd|atmos|10bit|8bit|rus|eng|multi|lq|hq)\b/gi, '');
-
-        title = title.replace(/\[[^\]]*\]|\([^\)]*\)/g, '');
-        title = title.replace(/\s+/g, ' ').trim();
-
+        // Series format
         if (e.season && e.episode) {
-            return title + ' S' + String(e.season).padStart(2, '0') +
-                'E' + String(e.episode).padStart(2, '0');
+            title += ' S' + String(e.season).padStart(2, '0') +
+                     'E' + String(e.episode).padStart(2, '0');
         }
-
-        if (e.year) {
-            return title + ' (' + e.year + ')';
+        // Movie year
+        else if (e.year) {
+            title += '.' + e.year;
         }
 
         return title;
     }
 
+    // ===== FAKE FILENAME INTO STREAM URL =====
+    function buildFakeUrl(url, title) {
+
+        // Clean title for filename
+        var safe = title
+            .replace(/[^a-z0-9\s.]/gi, '')
+            .replace(/\s+/g, '.');
+
+        // If already has extension → skip
+        if (/\.(mkv|mp4|avi)$/i.test(url)) return url;
+
+        // Append fake filename
+        if (url.indexOf('?') > -1) {
+            return url.replace('?', '/' + safe + '.mkv?');
+        } else {
+            return url + '/' + safe + '.mkv';
+        }
+    }
+
     // ===== PRELOAD TIME (CACHE ~32MB) =====
-    function getPreloadTime(size) {
+    function preloadTime(size) {
         if (!size) return 5;
         var gb = size / (1024 * 1024 * 1024);
         if (gb <= 1) return 3;
@@ -60,27 +73,33 @@
         if (!e.url) return;
         if (!/torrserver|\/stream\//i.test(e.url)) return;
 
-        var size = e.size || (e.torrent && e.torrent.size);
-        var preload = getPreloadTime(size);
-        var cleanTitle = formatTitle(e);
+        var title = buildTitle(e);
+        var url   = buildFakeUrl(e.url, title);
+        var size  = e.size || (e.torrent && e.torrent.size);
+        var wait  = preloadTime(size);
 
-        console.log('[MX PRELOAD]', cleanTitle);
+        console.log('[MX XPLAYER]', title);
 
+        // Stop default player
         Lampa.Player.stop();
 
+        // Preload delay
         setTimeout(function () {
-            openMX(e.url, cleanTitle);
-        }, preload * 1000);
+            openMX(url, title);
+        }, wait * 1000);
     });
 
     // ===== OPEN MX PLAYER =====
     function openMX(url, title) {
+
         var intent = {
             action: 'android.intent.action.VIEW',
             type: 'video/*',
             package: MX_PACKAGE,
             data: url,
-            extras: { title: title }
+            extras: {
+                title: title
+            }
         };
 
         if (window.Android && Android.startActivity) {
