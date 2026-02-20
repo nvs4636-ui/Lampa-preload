@@ -13,7 +13,7 @@
 
     // Настройки плагина с автоматическим определением адреса TorrServer
     var Settings = {
-        torrserve_host: 'http://192.168.3.41:8090', // Ваш адрес по умолчанию
+        torrserve_host: 'https://gren439e.tsarea.tv:8443', // Ваш адрес по умолчанию
         auto_calculate: Lampa.Storage.get('smart_preload_auto', true),
         default_percent: Lampa.Storage.get('smart_preload_percent', 50),
         preload_timeout: Lampa.Storage.get('smart_preload_timeout', 30), // минут
