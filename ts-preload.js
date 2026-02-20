@@ -3,7 +3,7 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX PRELOAD + AUTO COPY] Loaded');
+    console.log('[MX PRELOAD + POPUP COPY] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
 
@@ -29,21 +29,30 @@
         return title;
     }
 
-    // ===== COPY TO CLIPBOARD =====
-    function copyToClipboard(text) {
-        try {
-            if (window.Android && Android.setClipboard) {
-                Android.setClipboard(text);
-            } else if (navigator.clipboard) {
-                navigator.clipboard.writeText(text);
-            }
-            console.log('[CLIPBOARD]', text);
-        } catch (e) {
-            console.log('Clipboard error', e);
-        }
+    // ===== POPUP COPY TITLE (SAFE WAY) =====
+    function showCopyPopup(title) {
+        if (!Lampa.Modal) return;
+
+        var html =
+            '<div style="padding:16px;font-size:18px;word-break:break-word;">' +
+            '<div style="margin-bottom:10px;font-weight:bold;">Tên phim để tìm phụ đề</div>' +
+            '<div style="background:#1e1e1e;padding:12px;border-radius:8px;' +
+            'user-select:text;-webkit-user-select:text;">' +
+            title +
+            '</div>' +
+            '<div style="margin-top:10px;font-size:13px;opacity:.7;">' +
+            '👉 Giữ để copy, rồi dán vào tìm phụ đề trong MX Player' +
+            '</div>' +
+            '</div>';
+
+        Lampa.Modal.open({
+            title: 'Subtitle Helper',
+            html: html,
+            size: 'small'
+        });
     }
 
-    // ===== FAKE FILENAME FOR MX (OPTIONAL BUT HELPS) =====
+    // ===== FAKE FILENAME FOR MX =====
     function fakeUrl(url, title) {
         var safe = title
             .replace(/[^a-z0-9\s.]/gi, '')
@@ -80,17 +89,12 @@
         var size  = e.size || (e.torrent && e.torrent.size);
         var wait  = preloadTime(size);
 
-        // 👉 AUTO COPY TITLE
-        copyToClipboard(title);
-
-        // 👉 Thông báo nhẹ
-        if (Lampa.Noty) {
-            Lampa.Noty.show('Đã copy tên phim: ' + title);
-        }
-
         console.log('[MX START]', title);
 
-        // Stop player mặc định
+        // 👉 SHOW POPUP COPY TITLE
+        showCopyPopup(title);
+
+        // Stop player mặc định của Lampa
         Lampa.Player.stop();
 
         // Preload rồi mới mở MX
