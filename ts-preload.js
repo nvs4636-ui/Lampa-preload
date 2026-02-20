@@ -3,48 +3,53 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX Torrent Preload SAFE] Loaded');
+    console.log('[MX Auto Buffer Detect] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
-    var STORAGE_KEY = 'mx_torrent_preload_enabled';
 
-    // ===== STATE =====
-    function isEnabled() {
-        var v = Lampa.Storage.get(STORAGE_KEY);
-        return v === null ? true : v;
+    // ===== DETECT LOW BUFFER MODE =====
+    function isLowBufferMode(e) {
+
+        // 1. Remote TorrServer
+        if (e.url && !/127\.0\.0\.1|localhost/i.test(e.url)) {
+            return true;
+        }
+
+        // 2. Torrent lớn
+        var size = e.size || (e.torrent && e.torrent.size);
+        if (size && size > 3 * 1024 * 1024 * 1024) {
+            return true;
+        }
+
+        // 3. Android RAM thấp (ước lượng)
+        if (window.Android && Android.getMemoryClass) {
+            try {
+                var ram = Android.getMemoryClass(); // MB
+                if (ram && ram <= 2048) return true;
+            } catch (e) {}
+        }
+
+        // 4. MX Player Free (mặc định)
+        return true;
     }
 
-    function toggleEnabled() {
-        var v = !isEnabled();
-        Lampa.Storage.set(STORAGE_KEY, v);
-        Lampa.Noty.show('MX Torrent Preload: ' + (v ? 'ON' : 'OFF'));
-    }
-
-    // ===== MANUAL MENU (ALWAYS WORKS) =====
-    Lampa.Listener.follow('app', function (e) {
-        if (e.type !== 'ready') return;
-
-        Lampa.Controller.add({
-            title: 'MX Torrent Preload',
-            subtitle: function () {
-                return isEnabled() ? 'Đang bật' : 'Đang tắt';
-            },
-            onSelect: function () {
-                toggleEnabled();
-            }
-        });
-    });
-
-    // ===== PRELOAD TIME (REMOTE) =====
-    function getPreloadTime(size) {
-        if (!size) return 8;
+    // ===== PRELOAD TIME =====
+    function getPreloadTime(size, low) {
+        if (!size) return low ? 4 : 8;
 
         var gb = size / (1024 * 1024 * 1024);
 
-        if (gb <= 1) return 5;
-        if (gb <= 3) return 10;
-        if (gb <= 6) return 20;
-        return 30;
+        if (low) {
+            if (gb <= 1) return 2;
+            if (gb <= 3) return 4;
+            if (gb <= 6) return 8;
+            return 12;
+        } else {
+            if (gb <= 1) return 5;
+            if (gb <= 3) return 10;
+            if (gb <= 6) return 20;
+            return 30;
+        }
     }
 
     // ===== PLAYER HOOK =====
@@ -53,13 +58,17 @@
         if (e.type !== 'start') return;
         if (!e.url) return;
 
+        // chỉ xử lý torrent
         if (!/torrserver|\/stream\//i.test(e.url)) return;
 
-        var enabled = isEnabled();
+        var lowBuffer = isLowBufferMode(e);
         var size = e.size || (e.torrent && e.torrent.size);
-        var preload = enabled ? getPreloadTime(size) : 0;
+        var preload = getPreloadTime(size, lowBuffer);
 
-        console.log('[MX Torrent Preload]', enabled, preload);
+        console.log('[MX Auto Buffer]', {
+            lowBuffer: lowBuffer,
+            preload: preload
+        });
 
         Lampa.Player.stop();
 
@@ -83,7 +92,7 @@
         if (window.Android && Android.startActivity) {
             Android.startActivity(JSON.stringify(intent));
         } else {
-            console.log('[MX Torrent Preload] Android intent missing');
+            console.log('[MX Auto Buffer] Android intent missing');
         }
     }
 
