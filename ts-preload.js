@@ -3,24 +3,48 @@
 
     if (!window.Lampa) return;
 
-    console.log('[MX Preload + Clean Title] Loaded');
+    console.log('[MX Preload + RU Safe Title] Loaded');
 
     var MX_PACKAGE = 'com.mxtech.videoplayer.ad';
 
-    // ===== CLEAN & FORMAT TITLE (FIX x264 / SDR / HDR / DV) =====
-    function formatTitle(e) {
-        var title = e.title || 'Lampa Torrent';
+    // ===== DETECT CYRILLIC =====
+    function hasCyrillic(text) {
+        return /[А-Яа-яЁё]/.test(text);
+    }
 
-        // Chuẩn hóa dấu phân cách
+    // ===== CLEAN & FORMAT TITLE (ANTI-RU / UHD FIX) =====
+    function formatTitle(e) {
+        var title = '';
+
+        // 1️⃣ Ưu tiên original_title (TMDB - tiếng Anh)
+        if (e.original_title && !hasCyrillic(e.original_title)) {
+            title = e.original_title;
+        } else {
+            title = e.title || 'Lampa Torrent';
+        }
+
+        // Chuẩn hóa
         title = title.replace(/[._]/g, ' ');
 
-        // Xóa tag kỹ thuật
-        title = title.replace(/\b(480p|720p|1080p|2160p|4k|x264|x265|h264|h265|hevc|avc|sdr|hdr|hdr10|hdr10\+|dolby\s?vision|dv|webrip|web\-dl|bluray|brrip|remux|aac|ac3|eac3|ddp|dts|truehd|5\.1|7\.1|yify|rarbg|ettv)\b/gi, '');
+        // ❌ Xóa toàn bộ Cyrillic
+        title = title.replace(/[А-Яа-яЁё]/g, '');
 
-        // Xóa nội dung trong ngoặc có tag rác
-        title = title.replace(/\[[^\]]*\]|\([^\)]*(1080p|720p|x264|x265|hdr|sdr)[^\)]*\)/gi, '');
+        // ❌ Xóa tag kỹ thuật (FULL)
+        title = title.replace(/\b(
+            uhd|4k|2160p|1080p|720p|
+            x264|x265|h264|h265|hevc|avc|
+            sdr|hdr|hdr10|hdr10\+|dolby\s?vision|dv|
+            webrip|web\-dl|bluray|brrip|remux|
+            aac|ac3|eac3|ddp|dts|truehd|
+            atmos|10bit|8bit|
+            rus|eng|multi|
+            lq|hq
+        )\b/gi, '');
 
-        // Dọn khoảng trắng
+        // ❌ Xóa nội dung trong [] và ()
+        title = title.replace(/\[[^\]]*\]|\([^\)]*\)/g, '');
+
+        // Dọn sạch
         title = title.replace(/\s+/g, ' ').trim();
 
         // Series
@@ -35,15 +59,13 @@
             return title + ' (' + e.year + ')';
         }
 
-        return title;
+        return title || 'Movie';
     }
 
-    // ===== PRELOAD TIME (LOW BUFFER ~32MB) =====
+    // ===== PRELOAD (LOW BUFFER ~32MB) =====
     function getPreloadTime(size) {
         if (!size) return 5;
-
         var gb = size / (1024 * 1024 * 1024);
-
         if (gb <= 1) return 3;
         if (gb <= 3) return 6;
         if (gb <= 6) return 12;
@@ -55,23 +77,16 @@
 
         if (e.type !== 'start') return;
         if (!e.url) return;
-
-        // Chỉ xử lý torrent
         if (!/torrserver|\/stream\//i.test(e.url)) return;
 
         var size = e.size || (e.torrent && e.torrent.size);
         var preload = getPreloadTime(size);
         var cleanTitle = formatTitle(e);
 
-        console.log('[MX]', {
-            title: cleanTitle,
-            preload: preload
-        });
+        console.log('[MX RU SAFE]', cleanTitle);
 
-        // Dừng player Lampa
         Lampa.Player.stop();
 
-        // Preload rồi mở MX
         setTimeout(function () {
             openMX(e.url, cleanTitle);
         }, preload * 1000);
@@ -84,15 +99,11 @@
             type: 'video/*',
             package: MX_PACKAGE,
             data: url,
-            extras: {
-                title: title
-            }
+            extras: { title: title }
         };
 
         if (window.Android && Android.startActivity) {
             Android.startActivity(JSON.stringify(intent));
-        } else {
-            console.log('[MX] Android intent missing');
         }
     }
 
