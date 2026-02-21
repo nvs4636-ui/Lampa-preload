@@ -1,159 +1,239 @@
 (function () {
     'use strict';
 
-    var api = 'https://phimapi.com/';
-    var img = 'https://phimimg.com/';
+    if (!window.Lampa) return;
 
-    $('.menu__item[data-action="kkphim"]').remove();
+    var SOURCE_NAME = 'kkphim';
+    var BASE_URL = 'https://phimapi.com';
+    var IMG_URL = 'https://phimimg.com/';
+    var NETWORK = new Lampa.Reguest();
 
-    function KKPhim(object) {
-        var network = new Lampa.Request();
+    /* =========================
+       CATEGORY
+    ========================== */
+    var CATEGORIES = [
+        {
+            title: 'Phim mới cập nhật',
+            url: BASE_URL + '/danh-sach/phim-moi-cap-nhat'
+        },
+        {
+            title: 'Phim lẻ',
+            url: BASE_URL + '/v1/api/danh-sach/phim-le'
+        },
+        {
+            title: 'Phim bộ',
+            url: BASE_URL + '/v1/api/danh-sach/phim-bo'
+        },
+        {
+            title: 'Hoạt hình',
+            url: BASE_URL + '/v1/api/danh-sach/hoat-hinh'
+        },
+        {
+            title: 'TV Shows',
+            url: BASE_URL + '/v1/api/danh-sach/tv-shows'
+        }
+    ];
+
+    /* =========================
+       NORMALIZE DATA
+    ========================== */
+    function normalize(json) {
+        var items = [];
+
+        if (json?.data?.items) items = json.data.items;
+        else if (json?.items) items = json.items;
+
+        return {
+            results: items.map(function (item) {
+                return {
+                    id: item._id || item.slug,
+                    title: item.name,
+                    original_title: item.origin_name,
+                    overview: item.content || '',
+                    poster_path: item.poster_url
+                        ? (item.poster_url.indexOf('http') === 0
+                            ? item.poster_url
+                            : IMG_URL + item.poster_url)
+                        : '',
+                    backdrop_path: item.thumb_url
+                        ? (item.thumb_url.indexOf('http') === 0
+                            ? item.thumb_url
+                            : IMG_URL + item.thumb_url)
+                        : '',
+                    release_date: item.year ? item.year + '-01-01' : '',
+                    vote_average: 0,
+                    source: SOURCE_NAME,
+                    slug: item.slug
+                };
+            }),
+            page: json?.data?.params?.page || 1,
+            total_pages: json?.data?.params?.pagination?.totalPages || 1
+        };
+    }
+
+    /* =========================
+       API PART
+    ========================== */
+    function load(url, page, call) {
+        var link = url.indexOf('/v1/api/') > -1
+            ? url + '?page=' + page + '&limit=15'
+            : url + '?page=' + page;
+
+        NETWORK.silent(link, function (json) {
+            call(normalize(json));
+        }, function () {
+            call({ results: [] });
+        });
+    }
+
+    /* =========================
+       MAIN COMPONENT
+    ========================== */
+    function Component() {
+        var html = $('<div></div>');
         var scroll = new Lampa.Scroll({ mask: true });
-        var self = this;
+        var items = new Lampa.Items({
+            card: 'card',
+            onSelect: function (e) {
+                Lampa.Activity.push({
+                    url: e.data.slug,
+                    title: e.data.title,
+                    component: 'full',
+                    source: SOURCE_NAME
+                });
+            }
+        });
+
+        html.append(scroll.render());
+        scroll.append(items.render());
 
         this.create = function () {
-            Lampa.Loading.start();
-
-            if (object.url) this.loadGrid(object);
-            else this.loadHome();
-
-            return scroll.render();
+            scroll.add(items.render());
         };
 
-        /* HOME */
-        this.loadHome = function () {
-            var cats = [
-                { title: 'Phim Mới', url: api + 'danh-sach/phim-moi-cap-nhat' },
-                { title: 'Phim Lẻ', url: api + 'v1/api/danh-sach/phim-le' },
-                { title: 'Phim Bộ', url: api + 'v1/api/danh-sach/phim-bo' }
-            ];
-
-            var i = 0;
-            function next() {
-                if (i >= cats.length) return self.done();
-                self.loadRow(cats[i++], next);
-            }
-            next();
-        };
-
-        this.loadRow = function (cat, cb) {
-            var url = cat.url.includes('/v1/')
-                ? cat.url + '?page=1&limit=15'
-                : cat.url + '?page=1';
-
-            network.silent(url, function (data) {
-                var list = data?.data?.items || data?.items || [];
-                if (!list.length) return cb();
-
-                var row = Lampa.Template.get('category', {
+        this.load = function () {
+            CATEGORIES.forEach(function (cat) {
+                var row = new Lampa.Row({
                     title: cat.title,
                     more: true
                 });
 
-                row.find('.category__more').on('click', function () {
+                scroll.append(row.render());
+
+                load(cat.url, 1, function (data) {
+                    row.append(data.results);
+                });
+
+                row.onMore = function () {
                     Lampa.Activity.push({
-                        component: 'kkphim',
                         title: cat.title,
-                        url: cat.url,
-                        page: 1
+                        component: 'category',
+                        source: SOURCE_NAME,
+                        url: cat.url
                     });
-                });
-
-                var items = row.find('.category__items');
-
-                list.slice(0, 12).forEach(function (it) {
-                    items.append(self.card(it));
-                });
-
-                scroll.append(row);
-                cb();
-            }, cb);
-        };
-
-        /* GRID */
-        this.loadGrid = function (o) {
-            var url = o.url.includes('/v1/')
-                ? o.url + '?page=' + (o.page || 1) + '&limit=24'
-                : o.url + '?page=' + (o.page || 1);
-
-            network.silent(url, function (data) {
-                var list = data?.data?.items || data?.items || [];
-
-                list.forEach(function (it) {
-                    scroll.append(self.card(it));
-                });
-
-                self.done();
+                };
             });
         };
 
-        this.card = function (it) {
-            var c = Lampa.Template.get('card', {
-                title: it.name,
-                release_year: it.year || ''
-            });
-
-            var p = it.poster_url || it.thumb_url || '';
-            c.find('.card__img').attr('src', p.includes('http') ? p : img + p);
-
-            c.addClass('selector');
-            c.on('click', function () {
-                self.play(it);
-            });
-
-            return c;
-        };
-
-        this.play = function (it) {
-            network.silent(api + 'phim/' + it.slug, function (d) {
-                if (!d?.episodes?.length) return;
-
-                Lampa.Select.show({
-                    title: it.name,
-                    items: d.episodes[0].server_data.map(function (e) {
-                        return { title: 'Tập ' + e.name, url: e.link_m3u8 };
-                    }),
-                    onSelect: function (p) {
-                        Lampa.Player.play({
-                            title: p.title,
-                            url: p.url
-                        });
-                    }
-                });
-            });
-        };
-
-        this.done = function () {
-            Lampa.Loading.stop();
-            setTimeout(function () {
-                scroll.update();
-                Lampa.Controller.toggle('content');
-            }, 100);
+        this.render = function () {
+            return html;
         };
 
         this.destroy = function () {
-            network.clear();
             scroll.destroy();
+            html.remove();
         };
     }
 
-    function start() {
-        Lampa.Component.add('kkphim', KKPhim);
-
-        var m = $(`
-            <li class="menu__item selector" data-action="kkphim">
-                <div class="menu__ico">🎬</div>
-                <div class="menu__text">KKPhim</div>
-            </li>
-        `);
-
-        m.on('click', function () {
-            Lampa.Activity.push({ component: 'kkphim', title: 'KKPhim' });
+    /* =========================
+       CATEGORY PAGE
+    ========================== */
+    Lampa.Component.add('category', function () {
+        var component = this;
+        var page = 1;
+        var url;
+        var scroll = new Lampa.Scroll({ mask: true });
+        var items = new Lampa.Items({
+            card: 'card',
+            onSelect: function (e) {
+                Lampa.Activity.push({
+                    url: e.data.slug,
+                    title: e.data.title,
+                    component: 'full',
+                    source: SOURCE_NAME
+                });
+            }
         });
 
-        $('.menu .menu__list').append(m);
-    }
+        this.create = function () {
+            component.activity.loader(true);
+            url = component.activity.url;
+            scroll.append(items.render());
+            component.load();
+        };
 
-    if (window.appready) start();
-    else Lampa.Listener.follow('app', e => e.type === 'ready' && start());
+        this.load = function () {
+            load(url, page, function (data) {
+                component.activity.loader(false);
+                items.append(data.results);
+                page++;
+            });
+        };
+
+        this.render = function () {
+            return scroll.render();
+        };
+
+        this.destroy = function () {
+            scroll.destroy();
+        };
+    });
+
+    /* =========================
+       FULL (DETAIL)
+    ========================== */
+    Lampa.Component.add('full', function () {
+        var component = this;
+        var slug;
+
+        this.create = function () {
+            slug = component.activity.url;
+
+            NETWORK.silent(BASE_URL + '/phim/' + slug, function (json) {
+                var movie = json.movie;
+
+                component.activity.set({
+                    title: movie.name,
+                    description: movie.content || '',
+                    poster: IMG_URL + movie.poster_url,
+                    backdrop: IMG_URL + movie.thumb_url
+                });
+
+                if (movie.episodes && movie.episodes.length) {
+                    var episodes = [];
+
+                    movie.episodes[0].server_data.forEach(function (ep) {
+                        episodes.push({
+                            title: ep.name,
+                            url: ep.link_m3u8 || ep.link_embed
+                        });
+                    });
+
+                    component.activity.setEpisodes(episodes);
+                }
+            });
+        };
+    });
+
+    /* =========================
+       SOURCE REGISTER
+    ========================== */
+    Lampa.Source.add({
+        title: 'KKPhim',
+        name: SOURCE_NAME,
+        component: 'kkphim'
+    });
+
+    Lampa.Component.add('kkphim', Component);
+
 })();
