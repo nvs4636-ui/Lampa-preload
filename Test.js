@@ -3,10 +3,9 @@
 
     function KKPhim(object) {
         var network = new Lampa.Reguest();
-        // Cấu hình scroll tối ưu cho cả Vuốt (Touch) và Remote
-        var scroll = new Lampa.Scroll({mask: true, over: true, step: 250});
+        var scroll = new Lampa.Scroll({mask: true, over: true});
         var items = [];
-        var body = $('<div class="category-full"></div>'); 
+        var body = $('<div class="category-full"></div>');
         
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
@@ -16,10 +15,9 @@
         var self = this;
 
         this.create = function () {
-            // Nhét body vào bộ cuộn
+            // Gắn body vào scroll ngay từ đầu
             scroll.append(body);
 
-            // Tự load trang tiếp khi vuốt xuống cuối
             scroll.onEnd = function () {
                 if (!loading && page < total_pages) {
                     page++;
@@ -28,12 +26,12 @@
             };
 
             this.load();
-            return this.render();
+            return scroll.render(); // Trả về trực tiếp render của scroll
         };
 
         this.load = function () {
             loading = true;
-            if (page === 1 && this.activity) this.activity.loader(true); 
+            if (page === 1 && this.activity) this.activity.loader(true);
 
             var query = object.search || (object.movie && object.movie.title) || '';
             var url = query ? 
@@ -48,25 +46,27 @@
                 self.append(raw_items);
                 loading = false;
             }, function () {
-                self.empty('Lỗi kết nối KKPhim!');
                 loading = false;
+                Lampa.Noty.show('Lỗi kết nối KKPhim!');
             });
         };
 
         this.append = function (data) {
-            if (data.length === 0 && page === 1) return this.empty('Không tìm thấy phim!');
+            if (data.length === 0 && page === 1) {
+                body.append('<div class="empty">Hết phim rồi ní!</div>');
+            }
 
             data.forEach(function (item) {
                 if (!item) return;
                 var card = Lampa.Template.get('card', {
                     title: item.name || 'Phim',
-                    release_year: item.year || ''
+                    release_year: item.year || '2025'
                 });
 
                 var poster = item.poster_url || item.thumb_url || '';
                 card.find('.card__img').attr('src', poster.includes('http') ? poster : img_proxy + poster);
 
-                card.on('hover:enter', function () {
+                card.on('click hover:enter', function () {
                     self.getStream(item.slug, item.name);
                 });
 
@@ -79,16 +79,9 @@
                 this.activity.loader(false);
                 this.activity.toggle(); 
             }
-
-            // Ép cập nhật chiều cao để kích hoạt thanh cuộn
-            setTimeout(function() {
-                try { scroll.update(); } catch(e) {}
-            }, 100);
-        };
-
-        this.empty = function (msg) {
-            body.append('<div class="empty">' + msg + '</div>');
-            if (this.activity) { this.activity.loader(false); this.activity.toggle(); }
+            
+            // Cập nhật scroll để hệ thống nhận diện chiều cao mới
+            scroll.update();
         };
 
         this.start = function () {
@@ -122,28 +115,31 @@
             });
         };
 
-        this.pause = function () {};
-        this.stop = function () {};
         this.render = function () { return scroll.render(); };
         this.destroy = function () {
             network.clear();
             scroll.destroy();
             body.remove();
+            items = [];
         };
     }
 
     function startPlugin() {
-        // --- BƯỚC 1: DỌN DẸP MENU TRÙNG LẶP ---
+        // --- XỬ LÝ TRÙNG LẶP TRIỆT ĐỂ ---
+        if (window.kkphim_plugin_loaded) return;
+        window.kkphim_plugin_loaded = true;
+
+        // Xóa tất cả các bản cũ đang kẹt trong DOM
         $('.menu__item[data-action="kkphim"]').remove();
         
         Lampa.Component.add('kkphim', KKPhim);
 
         var menu_item = $('<li class="menu__item selector" data-action="kkphim">' +
-            '<div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 7L12 12L3 7L12 2L21 7Z" fill="#e74c3c"/><path d="M21 17L12 22L3 17" stroke="#e74c3c" stroke-width="2"/><path d="M21 12L12 17L3 12" stroke="#e74c3c" stroke-width="2"/></svg></div>' +
+            '<div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#3498db"/><path d="M10 8l6 4-6 4V8z" fill="white"/></svg></div>' +
             '<div class="menu__text">KKPhim</div>' +
             '</li>');
 
-        menu_item.on('hover:enter', function () {
+        menu_item.on('click hover:enter', function () {
             Lampa.Select.show({
                 title: 'Danh mục KKPhim',
                 items: [
@@ -159,11 +155,6 @@
         });
 
         $('.menu .menu__list').append(menu_item);
-
-        // --- BƯỚC 2: ÉP CSS ĐỂ VUỐT ĐƯỢC TRÊN ANDROID ---
-        if (!$('#kkphim-style').length) {
-            $('head').append('<style id="kkphim-style">.category-full { min-height: 101vh !important; display: flex; flex-wrap: wrap; }</style>');
-        }
     }
 
     if (window.appready) startPlugin();
