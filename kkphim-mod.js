@@ -5,21 +5,23 @@
         // Lắng nghe sự kiện khi vào trang chi tiết phim
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complite') {
-                // FIX LỖI: Kiểm tra kỹ đối tượng render
-                var render = e.object.render ? e.object.render() : $(e.object.html);
+                // FIX LỖI CONSOLE: Kiểm tra object trước khi lấy HTML
+                var render = e.object.html ? $(e.object.html) : (e.object.render ? e.object.render() : $('body'));
                 var movie = e.data.movie;
                 var title = movie.title || movie.name;
 
+                // Đợi hàng nút bấm xuất hiện
                 var waitButtons = setInterval(function() {
                     var container = render.find('.full-start__buttons');
                     
                     if (container.length) {
                         if (!container.find('.view--kkphim').length) {
-                            // Tạo nút bấm chuẩn
+                            // Tạo nút bấm KKPhim
                             var btn = $('<div class="full-start__button selector view--kkphim" style="background-color: #e67e22 !important; color: #fff !important; border-radius: 6px; margin-left: 10px;">' +
                                             '<span>KKPhim 4K</span>' +
                                         '</div>');
 
+                            // Xử lý tìm kiếm và lấy link
                             btn.on('click:select', function () {
                                 Lampa.Noty.show('Đang quét nguồn KKPhim...');
                                 $.getJSON('https://phimapi.com/v1/api/tim-kiem?keyword=' + encodeURIComponent(title), function (res) {
@@ -30,18 +32,22 @@
                                                 title: detail.movie.name,
                                                 items: eps.map(i => ({ title: 'Tập ' + i.name, url: i.link_m3u8 })),
                                                 onSelect: function (sel) {
-                                                    Lampa.Player.play({ url: sel.url, title: detail.movie.name + ' - ' + sel.title });
+                                                    Lampa.Player.play({ 
+                                                        url: sel.url, 
+                                                        title: detail.movie.name + ' - ' + sel.title 
+                                                    });
                                                     Lampa.Player.playlist(eps.map(i => ({ title: 'Tập ' + i.name, url: i.link_m3u8 })));
                                                 }
                                             });
                                         });
-                                    } else Lampa.Noty.show('Không tìm thấy phim!');
+                                    } else Lampa.Noty.show('Không tìm thấy phim này!');
                                 });
                             });
 
+                            // Chèn nút vào giao diện
                             container.append(btn);
                             
-                            // Cập nhật Controller để Remote bấm được
+                            // Cập nhật Controller để Remote có thể chọn nút
                             Lampa.Controller.add('full', {
                                 toggle: function() {
                                     Lampa.Controller.collectionSet(render);
@@ -52,6 +58,7 @@
                         clearInterval(waitButtons);
                     }
                 }, 200);
+                // Sau 5s không thấy hàng nút thì tự nghỉ cho đỡ tốn pin
                 setTimeout(function() { clearInterval(waitButtons); }, 5000);
             }
         });
