@@ -1,97 +1,95 @@
 (function () {
     'use strict';
 
-    function KKPhimProvider(object) {
+    function KKPhim(object) {
         var network = new Lampa.Reguest();
-        var modal = Lampa.UI.modal_loading(); // Hiển thị xoay xoay khi đang tìm link
+        var scroll = new Lampa.Scroll({mask: true, over: true});
+        var items = [];
+        var html = $('<div></div>');
+        var body = $('<div class="category-full"></div>');
+        var info;
 
-        this.search = function () {
+        this.create = function () {
             var _this = this;
-            // Tìm kiếm dựa trên tiêu đề phim đang xem
+            // Hiển thị trạng thái đang tìm kiếm
+            var loading = $('<div class="selector" style="padding: 20px; text-align: center;">Đang tìm nguồn KKPhim...</div>');
+            body.append(loading);
+
             var title = object.movie.title || object.movie.name;
             var url = 'https://phimapi.com/v1/api/tim-kiem?keyword=' + encodeURIComponent(title);
 
             network.silent(url, function (data) {
+                loading.remove();
                 var list = data.data ? data.data.items : [];
-                // Tìm phim có tên khớp nhất
                 var movie = list.find(function(m) {
                     return m.name.toLowerCase() === title.toLowerCase() || 
                            m.origin_name.toLowerCase() === title.toLowerCase();
-                }) || list[0]; // Nếu không khớp hoàn toàn thì lấy cái đầu tiên
+                }) || list[0];
 
                 if (movie) {
                     _this.getLinks(movie.slug);
                 } else {
-                    Lampa.UI.modal_close();
-                    Lampa.Noty.show('Không tìm thấy nguồn trên KKPhim');
+                    body.append('<div class="selector" style="padding: 20px; text-align: center;">Không tìm thấy phim trên KKPhim</div>');
                 }
-            }, function () {
-                Lampa.UI.modal_close();
-                Lampa.Noty.show('Lỗi kết nối KKPhim');
             });
+
+            return this.render();
         };
 
         this.getLinks = function (slug) {
+            var _this = this;
             fetch('https://phimapi.com/phim/' + slug)
                 .then(res => res.json())
                 .then(data => {
-                    Lampa.UI.modal_close();
-                    if (data.episodes && data.episodes[0].server_data.length > 0) {
-                        var episodes = data.episodes[0].server_data;
+                    body.empty();
+                    var episodes = data.episodes[0].server_data;
+                    
+                    episodes.forEach(function (ep) {
+                        var card = Lampa.Template.get('card', {
+                            title: ep.name,
+                            img: data.movie.thumb_url
+                        });
                         
-                        // Nếu là phim lẻ (1 tập), phát luôn
-                        if (episodes.length === 1) {
+                        card.addClass('card--small'); // Làm card nhỏ lại giống danh sách tập phim
+                        
+                        card.on('click:select', function () {
                             Lampa.Player.play({
-                                url: episodes[0].link_m3u8,
-                                title: data.movie.name
+                                url: ep.link_m3u8,
+                                title: data.movie.name + ' - ' + ep.name
                             });
-                        } else {
-                            // Nếu phim bộ, hiện danh sách tập
-                            var playlist = episodes.map(function(ep) {
-                                return {
-                                    title: ep.name,
-                                    url: ep.link_m3u8
-                                };
-                            });
-                            Lampa.Player.play({
-                                url: episodes[0].link_m3u8,
-                                title: data.movie.name
-                            });
+                            var playlist = episodes.map(e => ({ title: e.name, url: e.link_m3u8 }));
                             Lampa.Player.playlist(playlist);
-                        }
-                    }
-                }).catch(() => {
-                    Lampa.UI.modal_close();
-                    Lampa.Noty.show('Lỗi lấy link stream');
+                        });
+
+                        body.append(card);
+                    });
                 });
         };
+
+        this.render = function () { return html.append(body); };
+        this.destroy = function () { network.clear(); scroll.destroy(); html.remove(); };
     }
 
     function startPlugin() {
-        // Đăng ký vào sự kiện khi mở card phim
-        Lampa.Listener.follow('full', function (e) {
-            if (e.type == 'complite') {
-                // Tạo một dòng nút mới trong mục Source
-                var container = e.object.render().find('.full-start__buttons');
-                var button = $('<div class="full-start__button selector button--kkphim"><span>KKPhim</span></div>');
-
-                button.on('hover:focus', function () {
-                    // Hiệu ứng focus trên TV
-                }).on('click:select', function () {
-                    var provider = new KKPhimProvider(e.data);
-                    provider.search();
+        // Đăng ký nút "KKPhim" vào menu tương tác của phim (Interaction)
+        Lampa.Interaction.add({
+            label: 'KKPhim',
+            id: 'kkphim_source',
+            onSelect: function (object) {
+                // Khi bấm vào nút, đẩy một Activity mới hiện danh sách tập
+                Lampa.Activity.push({
+                    title: 'KKPhim',
+                    component: 'kkphim_component',
+                    movie: object.movie,
+                    page: 1
                 });
-
-                // Chèn nút vào trước hoặc sau các nút hiện có
-                container.append(button);
             }
         });
+
+        // Đăng ký Component để hiển thị danh sách tập
+        Lampa.Component.add('kkphim_component', KKPhim);
         
-        // Thêm CSS để nút trông đẹp hơn
-        Lampa.Template.add('kkphim_style', '<style>.button--kkphim{background: #e74c3c !important; color: #fff !important;}</style>');
-        $('body').append(Lampa.Template.get('kkphim_style', {}, true));
-        
-        console.log('KKPhim Source Plugin: Ready');
+        console.log('KKPhim Plugin Integrated');
     }
 
     if (window.app_ready) startPlugin();
