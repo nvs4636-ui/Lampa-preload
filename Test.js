@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    // --- 1. POLYFILLS (GIỮ NGUYÊN TỪ LNUM ĐỂ CHẠY TRÊN CÁC DÒNG TV CŨ) ---
+    // --- 1. POLYFILLS (GIỮ NGUYÊN ĐỂ CHẠY ỔN ĐỊNH TRÊN TV) ---
     if (!Object.keys) {
         Object.keys = function (o) {
             var r = [], k;
@@ -11,22 +11,14 @@
     }
     if (!Array.prototype.forEach) {
         Array.prototype.forEach = function (c, t) {
-            for (var i = 0, l = this.length >>> 0; i < l; i++) { if (i in this) c.call(t, this[i], i, this); }
-        };
-    }
-    if (!Array.prototype.map) {
-        Array.prototype.map = function (c, t) {
-            var s = Object(this), l = s.length >>> 0, r = new Array(l);
-            for (var i = 0; i < l; i++) { if (i in s) r[i] = c.call(t, s[i], i, s); }
-            return r;
+            for (var i = 0, l = this.length >>> 0; i < l; i++) { if (i in this) c.call(t, s[i], i, s); }
         };
     }
 
-    // --- 2. CẤU HÌNH HỆ THỐNG KKPHIM ---
+    // --- 2. CẤU HÌNH KKPHIM ---
     var SOURCE_NAME = 'KKPhim';
-    var ICON = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>';
-    var CACHE_SIZE = 100;
-    var CACHE_TIME = 1000 * 60 * 60 * 3; // 3 giờ
+    var ICON = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line></svg>';
+    var CACHE_TIME = 1000 * 60 * 60 * 5; // 5 giờ cache
     var cache = {};
     
     var API_BASE = 'https://phimapi.com/';
@@ -37,8 +29,7 @@
         movies: 'v1/api/danh-sach/phim-le',
         series: 'v1/api/danh-sach/phim-bo',
         anime: 'v1/api/danh-sach/hoat-hinh',
-        tv_shows: 'v1/api/danh-sach/tv-shows',
-        sub: 'v1/api/danh-sach/sub-movies'
+        tv_shows: 'v1/api/danh-sach/tv-shows'
     };
 
     var DISPLAY_OPTIONS = {
@@ -46,23 +37,24 @@
         movies: { title: 'Phim Lẻ', visible: true },
         series: { title: 'Phim Bộ', visible: true },
         anime: { title: 'Hoạt Hình', visible: true },
-        tv_shows: { title: 'TV Shows', visible: true },
-        sub: { title: 'Phim Vietsub', visible: true }
+        tv_shows: { title: 'TV Shows', visible: true }
     };
 
-    // --- 3. DỊCH THUẬT & SETTINGS ---
-    function addTranslates() {
-        Lampa.Lang.add({
-            kk_title: { en: 'KKPhim Title', vi: 'Tên hiển thị' },
-            kk_select_visibility: { en: 'Category Visibility', vi: 'Ẩn/Hiện danh mục' },
-            kk_donate: { en: 'Support', vi: 'Ủng hộ ní' }
-        });
-    }
-
-    // --- 4. HỆ THỐNG API SERVICE (XƯƠNG SỐNG LNUM) ---
+    // --- 3. KKPHIM API SERVICE (DÀI & CHI TIẾT) ---
     function KKPhimApiService() {
         var self = this;
         this.network = new Lampa.Reguest();
+
+        // Hàm sửa lỗi ảnh: Không để Lampa tự nối host TMDB vào link KKPhim
+        function fixImageUrl(url) {
+            if (!url) return './img/img_broken.svg';
+            if (url.indexOf('http') === 0) return url;
+            return IMG_PROXY + url;
+        }
+
+        function setCache(key, value) {
+            cache[key] = { timestamp: Date.now(), value: value };
+        }
 
         function getCache(key) {
             var res = cache[key];
@@ -70,23 +62,21 @@
             return null;
         }
 
-        function setCache(key, value) {
-            cache[key] = { timestamp: Date.now(), value: value };
-        }
-
+        // --- CHUẨN HÓA DỮ LIỆU SANG FORMAT LAMPA ---
         function normalizeData(json) {
             var items = (json.data && json.data.items) ? json.data.items : (json.items || []);
             return {
                 results: items.map(function (item) {
-                    var poster = item.poster_url || item.thumb_url || '';
+                    var img = fixImageUrl(item.poster_url || item.thumb_url);
                     return {
-                        id: item._id || item.slug,
+                        id: item.slug, // Dùng slug làm ID để gọi detail
                         title: item.name,
                         original_title: item.origin_name || '',
                         name: item.name,
-                        poster_path: poster.includes('http') ? poster : IMG_PROXY + poster,
-                        img: poster.includes('http') ? poster : IMG_PROXY + poster,
-                        backdrop_path: poster.includes('http') ? poster : IMG_PROXY + poster,
+                        // Quan trọng: Để img vào cả 3 trường này để Lampa Card không load nhầm link TMDB
+                        poster_path: img,
+                        backdrop_path: img,
+                        img: img,
                         overview: item.content || '',
                         vote_average: 8.0,
                         release_date: item.year || '2026',
@@ -108,16 +98,19 @@
             }, onError);
         };
 
+        // --- LOAD DANH SÁCH (TRANG GRID) ---
         this.list = function (params, onComplete, onError) {
             var url = params.url || (API_BASE + BASE_CATEGORIES.new);
-            url += (url.includes('?') ? '&' : '?') + 'page=' + (params.page || 1);
+            var page = params.page || 1;
+            var finalUrl = url + (url.indexOf('?') > -1 ? '&' : '?') + 'page=' + page;
             
-            var cached = getCache(url);
+            var cached = getCache(finalUrl);
             if (cached) return onComplete(cached);
 
-            this.get(url, params, onComplete, onError);
+            this.get(finalUrl, params, onComplete, onError);
         };
 
+        // --- LOAD TRANG CHỦ (NHIỀU HÀNG) ---
         this.category = function (params, onSuccess, onError) {
             var partsLimit = 5;
             var partsData = [];
@@ -126,12 +119,13 @@
                 if (DISPLAY_OPTIONS[key].visible) {
                     partsData.push(function (callback) {
                         var url = API_BASE + BASE_CATEGORIES[key];
-                        self.get(url + '?page=1', {}, function (json) {
+                        self.get(url + (url.indexOf('v1') > -1 ? '' : '?page=1'), {}, function (json) {
                             callback({
                                 title: DISPLAY_OPTIONS[key].title,
                                 results: json.results,
                                 url: url,
-                                source: SOURCE_NAME
+                                source: SOURCE_NAME,
+                                cardClass: 'card--collection' // Giúp card hiển thị chuẩn tỉ lệ
                             });
                         }, function() { callback({results: []}); });
                     });
@@ -141,53 +135,77 @@
             Lampa.Api.partNext(partsData, partsLimit, onSuccess, onError);
         };
 
+        // --- XỬ LÝ KHI BẤM VÀO PHIM (FIX LỖI) ---
         this.full = function (params, onSuccess, onError) {
-            // Hijack Lampa's full detail to fetch KKPhim streams
-            var slug = params.card.slug || params.card.id;
-            network.silent(API_BASE + 'phim/' + slug, function (data) {
-                if (data && data.episodes) {
-                    var server = data.episodes[0].server_data;
+            var slug = params.card.id || params.card.slug;
+            Lampa.Noty.show('Đang tải thông tin phim...');
+
+            this.network.silent(API_BASE + 'phim/' + slug, function (data) {
+                if (data && data.episodes && data.episodes.length > 0) {
+                    var movie_info = data.movie;
+                    var episodes = data.episodes[0].server_data;
+
+                    // Fake dữ liệu Detail để Lampa không báo lỗi
+                    var full_data = {
+                        movie: {
+                            id: movie_info.slug,
+                            title: movie_info.name,
+                            original_title: movie_info.origin_name,
+                            overview: movie_info.content,
+                            img: fixImageUrl(movie_info.poster_url),
+                            runtime: movie_info.time || '90 min',
+                            vote_average: 8.0,
+                            genres: movie_info.category ? movie_info.category.map(function(g){ return {name: g.name}; }) : []
+                        },
+                        source: SOURCE_NAME
+                    };
+
+                    // Hiển thị chọn tập ngay khi bấm
                     Lampa.Select.show({
-                        title: params.card.name,
-                        items: server.map(function(ep) { 
+                        title: movie_info.name,
+                        items: episodes.map(function(ep) { 
                             return { title: 'Tập ' + ep.name, url: ep.link_m3u8 }; 
                         }),
                         onSelect: function(selected) { 
-                            Lampa.Player.play(selected); 
+                            Lampa.Player.play({
+                                url: selected.url,
+                                title: movie_info.name + ' - ' + selected.title
+                            }); 
                         },
                         onBack: function() {
                             Lampa.Controller.toggle('content');
                         }
                     });
+
+                    onSuccess(full_data);
+                } else {
+                    Lampa.Noty.show('Không tìm thấy link phim!');
+                    onError();
                 }
-            });
+            }, onError);
         };
     }
 
-    // --- 5. KHỞI CHẠY PLUGIN ---
+    // --- 4. KHỞI CHẠY VÀ CÀI ĐẶT ---
     function startPlugin() {
-        if (window.kkphim_plugin_loaded) return;
-        window.kkphim_plugin_loaded = true;
+        if (window.kkphim_v2_loaded) return;
+        window.kkphim_v2_loaded = true;
 
-        addTranslates();
-
-        // Đăng ký API vào hệ thống Lampa
         var kkApi = new KKPhimApiService();
         Lampa.Api.sources[SOURCE_NAME] = kkApi;
 
-        // Settings UI
+        // Settings để ní chỉnh ẩn/hiện danh mục
         Lampa.SettingsApi.addComponent({ component: 'kk_settings', name: SOURCE_NAME, icon: ICON });
-        
         Object.keys(DISPLAY_OPTIONS).forEach(function(opt) {
             Lampa.SettingsApi.addParam({
                 component: 'kk_settings',
                 param: { name: 'kk_show_' + opt, type: 'trigger', default: true },
-                field: { name: DISPLAY_OPTIONS[opt].title, description: 'Hiện mục này ngoài trang chủ' },
+                field: { name: DISPLAY_OPTIONS[opt].title, description: 'Hiện/Ẩn hàng này ở trang chủ' },
                 onChange: function(value) { DISPLAY_OPTIONS[opt].visible = (value === 'true'); }
             });
         });
 
-        // Thêm Menu
+        // Menu item
         var menuItem = $('<li class="menu__item selector" data-action="kkphim"><div class="menu__ico">' + ICON + '</div><div class="menu__text">' + SOURCE_NAME + '</div></li>');
         menuItem.on('hover:enter', function () {
             Lampa.Activity.push({
@@ -199,11 +217,18 @@
         });
         $('.menu .menu__list').append(menuItem);
 
-        // --- CSS FIX THANH BAR ĐEN (VÌ NÍ MUỐN BLACK BAR) ---
-        $('head').append('<style> .bar { background: #000 !important; opacity: 1 !important; } .category-list__title { color: #e74c3c !important; font-weight: bold; } </style>');
+        // CSS ép chế độ ảnh chuẩn, không bị đè URL
+        $('head').append(`
+            <style>
+                .card__img[src*="image.tmdb.org"] { object-fit: cover !important; }
+                .card--collection .card__img { height: 220px !important; }
+                .bar { background: #000 !important; opacity: 1 !important; }
+                /* Ẩn phần text URL nếu nó vẫn lọt vào */
+                .card__title { font-size: 1.1rem !important; margin-top: 5px; }
+            </style>
+        `);
     }
 
-    // Đợi App sẵn sàng
     if (window.appready) startPlugin();
     else Lampa.Listener.follow('app', function (e) { if (e.type === 'ready') startPlugin(); });
 
