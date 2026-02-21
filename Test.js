@@ -1,271 +1,218 @@
-// kkphim-source.js
+// kkphim-button-plugin.js
 (function(){
     'use strict';
 
-    var PLUGIN_NAME = 'KKPhimSource';
-    var DEFAULT_BASE = 'https://kkphim.com'; // đổi nếu cần
-    var CACHE_TTL = 1000 * 60 * 5; // 5 phút
+    var PLUGIN_NAME = 'KKPhimButton';
+    var BASE = 'https://kkphim.com'; // đổi nếu cần
 
-    // Simple storage helper
-    var Storage = {
-        get: function(key){
-            try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return null; }
-        },
-        set: function(key, val){
-            try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){}
-        },
-        remove: function(key){ try { localStorage.removeItem(key); } catch(e){} }
-    };
+    // Helper: tạo element từ HTML
+    function el(html){
+        var div = document.createElement('div');
+        div.innerHTML = html.trim();
+        return div.firstChild;
+    }
 
-    // Config UI (Lampa may show plugin settings if implemented)
-    var Config = {
-        key: 'kkphim_source_config',
-        default: {
-            base: DEFAULT_BASE,
-            use_torrserve_for_magnet: false,
-            torrserve_url: 'http://127.0.0.1:8090' // user can change
-        },
-        load: function(){
-            var c = Storage.get(this.key) || {};
-            return Object.assign({}, this.default, c);
-        },
-        save: function(cfg){
-            Storage.set(this.key, cfg);
+    // Tạo modal đơn giản
+    function showModal(title, contentHtml){
+        // nếu modal đã tồn tại thì cập nhật
+        var existing = document.getElementById('kkphim-modal');
+        if(existing){
+            existing.querySelector('.kk-title').textContent = title;
+            existing.querySelector('.kk-body').innerHTML = contentHtml;
+            existing.style.display = 'block';
+            return;
         }
-    };
 
-    function now(){ return Date.now(); }
-
-    function cacheGet(key){
-        var obj = Storage.get('kk_cache_' + key);
-        if(!obj) return null;
-        if(now() - (obj.t || 0) > CACHE_TTL) { Storage.remove('kk_cache_' + key); return null; }
-        return obj.v;
-    }
-
-    function cacheSet(key, val){
-        Storage.set('kk_cache_' + key, { t: now(), v: val });
-    }
-
-    // Safe fetch with JSON parse and optional headers
-    function safeFetchJson(url, opts){
-        opts = opts || {};
-        // add simple headers to mimic browser
-        opts.headers = opts.headers || {};
-        opts.headers['Accept'] = 'application/json, text/javascript, */*; q=0.01';
-        opts.headers['User-Agent'] = opts.headers['User-Agent'] || 'Mozilla/5.0 (Lampa Plugin)';
-        return fetch(url, opts).then(function(res){
-            if(!res.ok) throw new Error('HTTP ' + res.status);
-            return res.json().catch(function(){ throw new Error('Invalid JSON'); });
+        var modal = el('\
+            <div id="kkphim-modal" style="position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:99999;display:block;">\
+                <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80%;max-width:720px;background:#111;color:#fff;border-radius:8px;overflow:hidden;">\
+                    <div style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">\
+                        <div class="kk-title" style="font-weight:600"></div>\
+                        <button id="kkphim-close" style="background:transparent;border:0;color:#fff;font-size:18px;cursor:pointer">✕</button>\
+                    </div>\
+                    <div class="kk-body" style="padding:12px 16px;max-height:60vh;overflow:auto"></div>\
+                </div>\
+            </div>');
+        modal.querySelector('.kk-title').textContent = title;
+        modal.querySelector('.kk-body').innerHTML = contentHtml;
+        document.body.appendChild(modal);
+        modal.querySelector('#kkphim-close').addEventListener('click', function(){
+            modal.style.display = 'none';
         });
     }
 
-    // Parse many possible shapes of KKPhim response into array of {title, url, quality, type}
-    function parseSourcesFromData(data){
-        var list = [];
-        if(!data) return list;
-
-        function pushIf(u, title, quality){
-            if(!u) return;
-            var type = (u.indexOf('magnet:') === 0) ? 'magnet' : (u.indexOf('.m3u8') !== -1 ? 'hls' : 'file');
-            list.push({ title: title || 'KKPhim', url: u, quality: quality || '', type: type });
-        }
-
-        // common fields
-        if(Array.isArray(data.sources)){
-            data.sources.forEach(function(s){
-                if(typeof s === 'string') pushIf(s, 'KK');
-                else {
-                    pushIf(s.link_m3u8 || s.file || s.url || s.magnet, s.name || s.title, s.quality);
-                }
-            });
-        }
-
-        if(Array.isArray(data.episodes)){
-            data.episodes.forEach(function(ep){
-                if(ep.sources && Array.isArray(ep.sources)){
-                    ep.sources.forEach(function(s){
-                        pushIf(s.link_m3u8 || s.file || s.url || s.magnet, s.name || ep.title || 'EP', s.quality);
-                    });
-                } else {
-                    pushIf(ep.link_m3u8 || ep.file || ep.url || ep.magnet, ep.title, ep.quality);
-                }
-            });
-        }
-
-        // direct fields
-        if(data.stream) pushIf(data.stream, 'KK stream', data.quality);
-        if(data.file) pushIf(data.file, 'KK file', data.quality);
-        if(data.link_m3u8) pushIf(data.link_m3u8, 'KK m3u8', data.quality);
-        if(data.magnet) pushIf(data.magnet, 'KK magnet', data.quality);
-
-        // some APIs return data.data or data.result
-        if(data.data) return parseSourcesFromData(data.data).concat(list);
-        if(data.result) return parseSourcesFromData(data.result).concat(list);
-
-        // dedupe by url
-        var seen = {};
-        return list.filter(function(i){
-            if(!i.url) return false;
-            if(seen[i.url]) return false;
-            seen[i.url] = true;
-            return true;
+    // Build list HTML from sources array
+    function buildSourcesHtml(sources){
+        if(!sources || !sources.length) return '<div style="padding:12px">Không tìm thấy nguồn.</div>';
+        var html = '<div style="display:flex;flex-direction:column;gap:8px;padding:8px">';
+        sources.forEach(function(s, idx){
+            var q = s.quality ? ' • ' + s.quality : '';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.03);padding:8px;border-radius:6px;">' +
+                        '<div style="flex:1;min-width:0;">' +
+                          '<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (s.title || 'Nguồn ' + (idx+1)) + q + '</div>' +
+                          '<div style="font-size:12px;color:#bbb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + s.url + '</div>' +
+                        '</div>' +
+                        '<div style="margin-left:12px">' +
+                          '<button class="kk-play" data-url="' + encodeURIComponent(s.url) + '" style="padding:6px 10px;border-radius:4px;border:0;background:#2ecc71;color:#000;cursor:pointer">Play</button>' +
+                        '</div>' +
+                      '</div>';
         });
+        html += '</div>';
+        return html;
     }
 
-    // Try multiple endpoints to find movie details
-    function fetchMovieDetails(base, idOrSlug){
+    // Gọi API KKPhim (thử nhiều endpoint)
+    function fetchMovieSources(base, idOrSlug){
         var tries = [
             base + '/api/v1/movies/' + idOrSlug,
             base + '/api/v1/film/' + idOrSlug,
-            base + '/api/v1/movie/' + idOrSlug,
-            base + '/api/v1/films/' + idOrSlug
+            base + '/api/v1/movie/' + idOrSlug
         ];
-        var cacheKey = 'movie_' + idOrSlug;
-        var cached = cacheGet(cacheKey);
-        if(cached) return Promise.resolve(cached);
 
         function tryNext(i){
             if(i >= tries.length) return Promise.reject(new Error('No endpoint matched'));
-            return safeFetchJson(tries[i]).then(function(json){
-                cacheSet(cacheKey, json);
-                return json;
-            }).catch(function(){
-                return tryNext(i+1);
-            });
-        }
-        return tryNext(0);
-    }
-
-    // Search endpoint
-    function searchMovies(base, query){
-        var q = encodeURIComponent(query);
-        var tries = [
-            base + '/api/v1/search?keyword=' + q,
-            base + '/api/v1/movies?search=' + q,
-            base + '/api/v1/search?q=' + q
-        ];
-        var cacheKey = 'search_' + query;
-        var cached = cacheGet(cacheKey);
-        if(cached) return Promise.resolve(cached);
-
-        function tryNext(i){
-            if(i >= tries.length) return Promise.reject(new Error('No search endpoint'));
-            return safeFetchJson(tries[i]).then(function(json){
-                var arr = json.results || json.data || json.items || json;
-                if(!Array.isArray(arr)) arr = [];
-                var mapped = arr.map(function(it){
-                    return {
-                        title: it.title || it.name || it.original_title || it.slug || '',
-                        id: it.id || it.slug || it.url || '',
-                        poster: it.poster || it.image || it.cover || ''
-                    };
-                });
-                cacheSet(cacheKey, mapped);
-                return mapped;
-            }).catch(function(){
-                return tryNext(i+1);
-            });
-        }
-        return tryNext(0);
-    }
-
-    // If magnet and user wants TorrServe, build TorrServe HTTP stream URL
-    function magnetToTorrserve(cfg, magnet){
-        if(!cfg.use_torrserve_for_magnet || !cfg.torrserve_url) return magnet;
-        // TorrServe typical API: /torrent?magnet=... or /stream?magnet=...
-        // We'll return a simple proxy path; user may need to adjust based on their TorrServe setup.
-        try {
-            var enc = encodeURIComponent(magnet);
-            return cfg.torrserve_url.replace(/\/$/, '') + '/torrent?magnet=' + enc;
-        } catch(e){
-            return magnet;
-        }
-    }
-
-    // Plugin registration
-    var plugin = {
-        manifest: {
-            name: PLUGIN_NAME,
-            version: '1.0.0',
-            description: 'Nguồn phim từ KKPhim API (HLS, MP4, magnet). Có caching và tùy chọn TorrServe.'
-        },
-        init: function(){
-            var cfg = Config.load();
-
-            Lampa.Source.add({
-                title: 'KKPhim',
-                search: function(query, callback){
-                    searchMovies(cfg.base, query).then(function(items){
-                        callback(items);
-                    }).catch(function(){
-                        callback([]);
-                    });
-                },
-                movie: function(movie, callback){
-                    var id = movie.id || movie.tmdb_id || movie.slug || movie.url || movie.title;
-                    if(!id) return callback([]);
-                    fetchMovieDetails(cfg.base, id).then(function(json){
-                        var sources = parseSourcesFromData(json);
-                        // map magnet to torrserve if configured
-                        sources = sources.map(function(s){
-                            if(s.type === 'magnet') s.url = magnetToTorrserve(cfg, s.url);
-                            return s;
+            return fetch(tries[i], { headers: { 'Accept': 'application/json' } })
+                .then(function(r){
+                    if(!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function(json){
+                    // parse sources: cố gắng lấy data.sources, data.episodes, hoặc fields trực tiếp
+                    var list = [];
+                    if(json.sources && Array.isArray(json.sources)){
+                        json.sources.forEach(function(s){
+                            if(typeof s === 'string') list.push({ title: 'Nguồn', url: s });
+                            else list.push({ title: s.name || s.title || 'Nguồn', url: s.link_m3u8 || s.file || s.url || s.magnet, quality: s.quality || '' });
                         });
-                        callback(sources);
-                    }).catch(function(){
-                        callback([]);
-                    });
-                },
-                tv: function(tv, season, episode, callback){
-                    var id = tv.id || tv.slug || tv.url || tv.title;
-                    if(!id) return callback([]);
-                    // try tv-specific endpoints
-                    var tries = [
-                        cfg.base + '/api/v1/tv/' + id + '/season/' + season + '/episode/' + episode,
-                        cfg.base + '/api/v1/series/' + id + '/season/' + season + '/episode/' + episode
-                    ];
-                    (function tryNext(i){
-                        if(i >= tries.length) return callback([]);
-                        safeFetchJson(tries[i]).then(function(json){
-                            var sources = parseSourcesFromData(json);
-                            sources = sources.map(function(s){
-                                if(s.type === 'magnet') s.url = magnetToTorrserve(cfg, s.url);
-                                return s;
-                            });
-                            callback(sources);
-                        }).catch(function(){ tryNext(i+1); });
-                    })(0);
-                },
-                resolve: function(item, callback){
-                    // Lampa may call resolve to get final playable link
-                    // If item.url is already playable, return as-is
-                    callback(item);
+                    }
+                    if(list.length) return list;
+                    if(json.episodes && Array.isArray(json.episodes)){
+                        json.episodes.forEach(function(ep){
+                            if(ep.sources && Array.isArray(ep.sources)){
+                                ep.sources.forEach(function(s){
+                                    list.push({ title: s.name || ep.title || 'EP', url: s.link_m3u8 || s.file || s.url || s.magnet, quality: s.quality || '' });
+                                });
+                            } else {
+                                if(ep.link_m3u8 || ep.file || ep.url || ep.magnet) list.push({ title: ep.title || 'EP', url: ep.link_m3u8 || ep.file || ep.url || ep.magnet });
+                            }
+                        });
+                    }
+                    // direct fields
+                    if(json.stream) list.push({ title: 'Stream', url: json.stream, quality: json.quality || '' });
+                    if(json.file) list.push({ title: 'File', url: json.file, quality: json.quality || '' });
+                    if(json.link_m3u8) list.push({ title: 'HLS', url: json.link_m3u8, quality: json.quality || '' });
+                    if(json.magnet) list.push({ title: 'Magnet', url: json.magnet, quality: json.quality || '' });
+
+                    if(list.length) return list;
+                    // nếu không có, thử endpoint tiếp theo
+                    return tryNext(i+1);
+                })
+                .catch(function(){
+                    return tryNext(i+1);
+                });
+        }
+
+        return tryNext(0);
+    }
+
+    // Chèn button vào container action khi trang phim được load
+    function injectButtonWhenReady(movieData){
+        // thử nhiều selector phổ biến
+        var selectors = ['.movie__actions', '.actions', '.movie-actions', '.movie__info .actions'];
+        var container = null;
+        for(var i=0;i<selectors.length;i++){
+            container = document.querySelector(selectors[i]);
+            if(container) break;
+        }
+        // nếu chưa có container, thử chờ DOM thay đổi (MutationObserver)
+        if(!container){
+            var observer = new MutationObserver(function(mutations, obs){
+                for(var i=0;i<selectors.length;i++){
+                    var c = document.querySelector(selectors[i]);
+                    if(c){
+                        obs.disconnect();
+                        createButton(c, movieData);
+                        return;
+                    }
                 }
             });
+            observer.observe(document.body, { childList: true, subtree: true });
+        } else {
+            createButton(container, movieData);
         }
-    };
+    }
 
-    // Expose a simple settings UI hook (if Lampa supports plugin settings)
-    // This is optional: some Lampa builds allow plugin settings via Lampa.Plugin.addSettings
-    try {
-        Lampa.Plugin.addSettings && Lampa.Plugin.addSettings({
-            name: PLUGIN_NAME,
-            fields: [
-                { id: 'base', type: 'text', title: 'KKPhim Base URL', value: Config.load().base },
-                { id: 'use_torrserve_for_magnet', type: 'checkbox', title: 'Use TorrServe for magnet', value: Config.load().use_torrserve_for_magnet },
-                { id: 'torrserve_url', type: 'text', title: 'TorrServe URL', value: Config.load().torrserve_url }
-            ],
-            save: function(values){
-                var cfg = Config.load();
-                cfg.base = values.base || cfg.base;
-                cfg.use_torrserve_for_magnet = !!values.use_torrserve_for_magnet;
-                cfg.torrserve_url = values.torrserve_url || cfg.torrserve_url;
-                Config.save(cfg);
-                Lampa.Noty.show('KKPhim plugin', 'Cấu hình đã lưu', 2);
+    // Tạo button và gắn sự kiện
+    function createButton(container, movieData){
+        // tránh chèn nhiều lần
+        if(container.querySelector('#kkphim-btn')) return;
+
+        var btn = el('<button id="kkphim-btn" style="margin-left:8px;padding:8px 12px;border-radius:6px;border:0;background:#ffb86b;color:#000;cursor:pointer;font-weight:600">Nguồn KKPhim</button>');
+        container.appendChild(btn);
+
+        btn.addEventListener('click', function(){
+            var id = movieData && (movieData.id || movieData.slug || movieData.url || movieData.tmdb_id || movieData.title);
+            if(!id){
+                showModal('KKPhim', '<div style="padding:12px">Không xác định được ID/slug phim.</div>');
+                return;
             }
+            showModal('KKPhim', '<div style="padding:12px">Đang lấy nguồn...</div>');
+            fetchMovieSources(BASE, id).then(function(sources){
+                var html = buildSourcesHtml(sources);
+                showModal('KKPhim', html);
+                // gắn sự kiện play cho các nút
+                var modal = document.getElementById('kkphim-modal');
+                modal.querySelectorAll('.kk-play').forEach(function(p){
+                    p.addEventListener('click', function(){
+                        var url = decodeURIComponent(this.getAttribute('data-url'));
+                        // Nếu Lampa có API để phát trực tiếp, bạn có thể gọi ở đây.
+                        // Mặc định: mở link trong new tab (hoặc copy vào clipboard)
+                        try { window.open(url, '_blank'); } catch(e){ console.log('Open failed', e); }
+                    });
+                });
+            }).catch(function(){
+                showModal('KKPhim', '<div style="padding:12px">Không lấy được nguồn. Có thể endpoint khác hoặc bị chặn (CORS).</div>');
+            });
         });
-    } catch(e){ /* ignore if not supported */ }
+    }
 
-    Lampa.Plugin.add(plugin);
+    // Hook: khi plugin khởi tạo, cố gắng lấy movie data từ trang (nếu Lampa expose global movie object)
+    function initPlugin(){
+        // Thử lấy movie data từ global Lampa context
+        var movieData = null;
+        try {
+            // Một số build Lampa có biến global 'Lampa' với activity data
+            if(window.Lampa && Lampa.Activity && Lampa.Activity.current && Lampa.Activity.current.data){
+                movieData = Lampa.Activity.current.data;
+            }
+        } catch(e){ movieData = null; }
+
+        // Nếu không có, cố gắng parse từ DOM (ví dụ data-id attribute)
+        if(!movieData){
+            var elMovie = document.querySelector('[data-id], [data-slug]');
+            if(elMovie){
+                movieData = {
+                    id: elMovie.getAttribute('data-id') || elMovie.getAttribute('data-slug'),
+                    title: elMovie.getAttribute('data-title') || document.title
+                };
+            }
+        }
+
+        injectButtonWhenReady(movieData);
+    }
+
+    // Đăng ký plugin với Lampa (nếu Lampa.Plugin API có sẵn)
+    try {
+        Lampa.Plugin && Lampa.Plugin.add && Lampa.Plugin.add({
+            manifest: { name: PLUGIN_NAME, version: '1.0.0', description: 'Chèn nút KKPhim trên trang phim' },
+            init: initPlugin
+        });
+    } catch(e){
+        // Nếu Lampa không expose Plugin API, khởi chạy trực tiếp
+        setTimeout(initPlugin, 800);
+    }
+
+    // fallback: chạy sau DOM load
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(initPlugin, 500); });
+
 })();
