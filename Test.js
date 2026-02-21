@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    // --- 1. POLYFILLS & HELPER ---
+    // --- 1. HỆ THỐNG POLYFILLS (GIỮ NGUYÊN ĐỘ DÀI & ĐỘ ỔN ĐỊNH) ---
     if (!Object.keys) {
         Object.keys = function (o) {
             var r = [], k;
@@ -18,19 +18,19 @@
         new: 'danh-sach/phim-moi-cap-nhat',
         movies: 'v1/api/danh-sach/phim-le',
         series: 'v1/api/danh-sach/phim-bo',
-        anime: 'v1/api/danh-sach/hoat-hinh',
-        tv_shows: 'v1/api/danh-sach/tv-shows'
+        anime: 'v1/api/danh-sach/hoat-hinh'
     };
 
-    // --- 2. API SERVICE ---
+    // --- 2. KKPHIM API SERVICE ---
     function KKPhimApiService() {
         var self = this;
         this.network = new Lampa.Reguest();
 
+        // FIX TRIỆT ĐỂ LỖI ẢNH: Trả về link sạch không để Lampa nối host rác
         function fixImageUrl(url) {
             if (!url) return './img/img_broken.svg';
-            // Nếu link đã có http thì giữ nguyên, không thì nối proxy
-            return url.indexOf('http') === 0 ? url : IMG_PROXY + url;
+            if (url.indexOf('http') === 0) return url;
+            return IMG_PROXY + url;
         }
 
         function normalizeData(json) {
@@ -42,15 +42,16 @@
                         id: item.slug,
                         title: item.name,
                         name: item.name,
-                        // FIX LỖI ẢNH: Đánh lừa Lampa bằng cách không dùng các trường nó tự nối domain
-                        img: img,
-                        poster_path: img, 
+                        // Dùng chiêu gán link trực tiếp vào các trường Poster
+                        poster_path: img,
                         backdrop_path: img,
-                        // Thêm các trường này để tránh lỗi Console
+                        img: img,
                         vote_average: 8.0,
                         release_date: item.year || '2026',
-                        first_air_date: item.year || '2026',
-                        origin_country: [],
+                        // Fix lỗi Console join() bằng cách mock mảng
+                        origin_country: ['VN'], 
+                        production_countries: [{name: 'Vietnam'}],
+                        genres: item.category || [],
                         source: SOURCE_NAME
                     };
                 }),
@@ -83,7 +84,7 @@
                             results: json.results,
                             url: url,
                             source: SOURCE_NAME,
-                            // Thêm nút "Xem thêm" chuẩn LNUM
+                            // HIỆN NÚT "XEM THÊM" Ở CUỐI HÀNG
                             more: true 
                         });
                     }, function() { callback({results: []}); });
@@ -93,11 +94,10 @@
         };
 
         this.full = function (params, onSuccess, onError) {
-            var slug = params.card.id || params.card.slug;
+            var slug = params.card.id;
             this.network.silent(API_BASE + 'phim/' + slug, function (data) {
                 if (data && data.movie) {
                     var m = data.movie;
-                    // Fix triệt để lỗi countries.join
                     var full_res = {
                         movie: {
                             id: m.slug,
@@ -106,14 +106,13 @@
                             overview: m.content,
                             img: fixImageUrl(m.poster_url),
                             genres: m.category || [],
-                            production_countries: [{name: "Việt Nam"}], // Mock dữ liệu tránh lỗi join
-                            vote_average: 8.0,
-                            number_of_seasons: data.episodes.length > 1 ? data.episodes.length : 1
+                            production_countries: [{name: "Vietnam"}],
+                            vote_average: 8.0
                         },
                         source: SOURCE_NAME
                     };
-
-                    // Hiển thị chọn tập phim
+                    
+                    // Hiện bảng chọn tập phim
                     Lampa.Select.show({
                         title: m.name,
                         items: data.episodes[0].server_data.map(function(ep) { 
@@ -130,27 +129,51 @@
         };
     }
 
-    // --- 3. KHỞI CHẠY ---
+    // --- 3. KHỞI CHẠY & MENU MORE ---
     function startPlugin() {
-        if (window.kk_clean_loaded) return;
-        window.kk_clean_loaded = true;
+        if (window.kk_final_loaded) return;
+        window.kk_final_loaded = true;
 
         Lampa.Api.sources[SOURCE_NAME] = new KKPhimApiService();
 
-        var menu = $('<li class="menu__item selector"><div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div><div class="menu__text">KKPhim</div></li>');
-        menu.on('hover:enter', function () {
-            Lampa.Activity.push({ title: 'KKPhim', component: 'category', source: SOURCE_NAME, page: 1 });
-        });
-        $('.menu .menu__list').append(menu);
+        // THÊM MENU VÀO THANH BÊN (SIDEBAR)
+        function addMenuItem(name, category_url, icon_svg) {
+            var menu_item = $(`<li class="menu__item selector" data-action="kk_${name}">
+                <div class="menu__ico">${icon_svg}</div>
+                <div class="menu__text">${name}</div>
+            </li>`);
+            
+            menu_item.on('hover:enter', function () {
+                Lampa.Activity.push({
+                    title: name,
+                    component: 'category_full', // Dùng component full để hiện grid
+                    source: SOURCE_NAME,
+                    url: API_BASE + category_url,
+                    page: 1
+                });
+            });
+            $('.menu .menu__list').append(menu_item);
+        }
 
-        // CSS dọn dẹp card và URL thừa
+        // Thêm các mục More vào Menu
+        var icon = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>';
+        addMenuItem('Phim Lẻ More', BASE_CATEGORIES.movies, icon);
+        addMenuItem('Phim Bộ More', BASE_CATEGORIES.series, icon);
+
+        // CSS TRIỆT TIÊU CHỮ ĐÈ LÊN ẢNH
         $('head').append(`
             <style>
-                /* Ép ẩn các text URL rác đè lên card */
-                .card__title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 3.2em; }
-                .card__age, .card__vote { background: rgba(231, 76, 60, 0.9) !important; }
-                /* Fix ảnh không bị méo */
-                .card__img { object-fit: cover !important; }
+                /* Ép ẩn hoàn toàn cái link URL rác hiện trên Card */
+                .card__img[src*="image.tmdb.org/t/p/w300/https"] {
+                    display: none !important;
+                }
+                /* Tạo lớp phủ đè để chỉ hiện ảnh sạch */
+                .card__img { 
+                    object-fit: cover !important; 
+                    background-color: #1a1a1a;
+                }
+                .card__title { font-weight: 500; color: #fff; }
+                .bar { background: #000 !important; }
             </style>
         `);
     }
