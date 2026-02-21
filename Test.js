@@ -1,43 +1,56 @@
 (function () {
     'use strict';
 
+    // Dọn rác cũ để tránh trùng lặp menu
     $('.menu__item[data-action="kkphim"]').remove();
 
     function KKPhim(object) {
         var network = new Lampa.Reguest();
-        var scroll = new Lampa.Scroll({mask: true, over: true});
-        var items = [];
-        var html = $('<div class="category-full"></div>');
+        var scroll  = new Lampa.Scroll({mask: true, over: true});
+        var items   = [];
+        var html    = $('<div class="category-full"></div>');
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
-        var self = this;
+        var self    = this;
+
+        // Cấu trúc 6 mục chuẩn theo LNUM ní yêu cầu
+        var BASE_CATEGORIES = {
+            movies: { title: 'Phim Mới Cập Nhật', url: api_host + 'danh-sach/phim-moi-cap-nhat' },
+            tv: { title: 'Phim Lẻ', url: api_host + 'v1/api/danh-sach/phim-le' },
+            cartoons: { title: 'Phim Bộ', url: api_host + 'v1/api/danh-sach/phim-bo' },
+            anime: { title: 'Hoạt Hình', url: api_host + 'v1/api/danh-sach/hoat-hinh' },
+            tv_shows: { title: 'TV Shows', url: api_host + 'v1/api/danh-sach/tv-shows' },
+            vietsub: { title: 'Phim Vietsub', url: api_host + 'v1/api/danh-sach/sub-movies' }
+        };
 
         this.create = function () {
-            // Nếu có url cụ thể thì load Grid (trang More), nếu không thì load Home
             if (object.url) {
-                this.loadCategory(object.url);
+                this.makeRequest(object.url, true);
             } else {
                 this.buildHome();
             }
             return scroll.render();
         };
 
+        // Giữ nguyên hàm makeRequest thần thánh của LNUM để tránh lỗi getBoundingClientRect
+        this.makeRequest = function (url, is_grid) {
+            network.silent(url + (url.includes('?') ? '&' : '?') + 'page=' + (object.page || 1), function (data) {
+                var list = (data.data && data.data.items) ? data.data.items : (data.items || []);
+                if (is_grid) {
+                    self.buildGrid(list);
+                } else {
+                    // Xử lý row ngang ở đây nếu cần
+                }
+            });
+        };
+
         this.buildHome = function () {
             var partsData = [];
 
-            // Cấu trúc 6 mục chuẩn như ảnh ní gửi
-            var BASE_CATEGORIES = [
-                { title: 'Phim Mới Cập Nhật', url: api_host + 'danh-sach/phim-moi-cap-nhat' },
-                { title: 'Phim Lẻ', url: api_host + 'v1/api/danh-sach/phim-le' },
-                { title: 'Phim Bộ', url: api_host + 'v1/api/danh-sach/phim-bo' },
-                { title: 'Hoạt Hình', url: api_host + 'v1/api/danh-sach/hoat-hinh' },
-                { title: 'TV Shows', url: api_host + 'v1/api/danh-sach/tv-shows' },
-                { title: 'Phim Vietsub', url: api_host + 'v1/api/danh-sach/sub-movies' }
-            ];
-
-            // Đẩy vào hàng đợi load thủ công như LNUM
-            BASE_CATEGORIES.forEach(function(cat) {
-                partsData.push(function(callback) {
+            // Duyệt qua 6 mục y hệt cấu trúc ảnh ní gửi
+            Object.keys(BASE_CATEGORIES).forEach(function (key) {
+                var cat = BASE_CATEGORIES[key];
+                partsData.push(function (callback) {
                     var row = $(`
                         <div class="category-list__row">
                             <div class="category-list__header">
@@ -48,62 +61,57 @@
                         </div>
                     `);
 
-                    row.find('.category-list__more').on('click', function() {
+                    row.find('.category-list__more').on('click', function () {
                         Lampa.Activity.push({ title: cat.title, url: cat.url, component: 'kkphim', page: 1 });
                     });
 
-                    network.silent(cat.url + (cat.url.includes('?') ? '&' : '?') + 'page=1', function(data) {
+                    network.silent(cat.url + '?page=1', function (data) {
                         var list = (data.data && data.data.items) ? data.data.items : (data.items || []);
                         var body = row.find('.category-list__body');
                         
-                        list.slice(0, 7).forEach(function(item) {
+                        list.slice(0, 8).forEach(function (item) {
                             var card = Lampa.Template.get('card', { title: item.name, release_year: item.year });
                             var poster = item.poster_url || item.thumb_url || '';
                             card.find('.card__img').attr('src', poster.includes('http') ? poster : img_proxy + poster);
                             card.addClass('selector');
-                            card.on('click', function() { self.getStream(item.slug, item.name); });
+                            card.on('click', function () { self.getStream(item.slug, item.name); });
                             body.append(card);
                         });
                         
                         html.append(row);
-                        callback(); // Xong mục này mới load tiếp mục sau
+                        callback(); // Quan trọng: Đợi load xong mới tiếp tục để tránh văng xanh
                     });
                 });
             });
 
-            // Kích hoạt hàng đợi load
-            var loadNext = function() {
+            // Hàm kích hoạt chuỗi load của LNUM
+            var proceed = function () {
                 if (partsData.length) {
-                    var next = partsData.shift();
-                    next(loadNext);
+                    partsData.shift()(proceed);
                 } else {
                     scroll.update();
                 }
             };
-            loadNext();
-
+            proceed();
             scroll.append(html);
         };
 
-        this.loadCategory = function (url) {
-            network.silent(url + (url.includes('?') ? '&' : '?') + 'page=1', function (data) {
-                var list = (data.data && data.data.items) ? data.data.items : (data.items || []);
-                var grid = $('<div class="category-full"></div>');
-                list.forEach(function (item) {
-                    var card = Lampa.Template.get('card', { title: item.name, release_year: item.year });
-                    var poster = item.poster_url || item.thumb_url || '';
-                    card.find('.card__img').attr('src', poster.includes('http') ? poster : img_proxy + poster);
-                    card.addClass('selector');
-                    card.on('click', function () { self.getStream(item.slug, item.name); });
-                    grid.append(card);
-                });
-                scroll.append(grid);
-                scroll.update();
+        this.buildGrid = function (data) {
+            var grid = $('<div class="category-full"></div>');
+            data.forEach(function (item) {
+                var card = Lampa.Template.get('card', { title: item.name, release_year: item.year });
+                var poster = item.poster_url || item.thumb_url || '';
+                card.find('.card__img').attr('src', poster.includes('http') ? poster : img_proxy + poster);
+                card.addClass('selector');
+                card.on('click', function () { self.getStream(item.slug, item.name); });
+                grid.append(card);
             });
+            scroll.append(grid);
+            scroll.update();
         };
 
         this.getStream = function (slug, title) {
-            Lampa.Noty.show('Đang lấy link...');
+            Lampa.Noty.show('Đang tải link phim...');
             network.silent(api_host + 'phim/' + slug, function (data) {
                 if (data && data.episodes && data.episodes[0].server_data.length > 0) {
                     var server = data.episodes[0].server_data;
@@ -140,22 +148,22 @@
             '</li>');
 
         menu_item.on('click', function () {
-            Lampa.Activity.push({ title: 'KKPhim', component: 'kkphim', page: 1 });
+            Lampa.Activity.push({ title: 'KKPhim Home', component: 'kkphim', page: 1 });
         });
         $('.menu .menu__list').append(menu_item);
 
-        // CSS ép giao diện đen đặc và hàng ngang mượt như LNUM
-        if (!$('#kk-lnum-style').length) {
-            $('head').append(`<style id="kk-lnum-style">
-                .bar { background: #000 !important; opacity: 1 !important; }
+        // CSS ép thanh bar đen đặc không trong suốt
+        if (!$('#kk-style-lnum').length) {
+            $('head').append(`<style id="kk-style-lnum">
+                .bar { background: #000 !important; opacity: 1 !important; border-top: 1px solid #333; }
                 .category-list__row { margin-bottom: 25px; }
                 .category-list__header { display: flex; align-items: center; padding: 0 20px 10px; }
-                .category-list__title { flex-grow: 1; font-size: 1.5rem; font-weight: bold; color: #fff; text-transform: uppercase; }
-                .category-list__more { background: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 4px; font-size: 0.9rem; }
+                .category-list__title { flex-grow: 1; font-size: 1.6rem; font-weight: bold; color: #fff; }
+                .category-list__more { background: rgba(255,255,255,0.1); padding: 5px 12px; border-radius: 4px; }
                 .category-list__more.focus { background: #fff; color: #000; }
-                .category-list__body { display: flex; overflow-x: auto; padding: 0 15px; gap: 10px; -webkit-overflow-scrolling: touch; }
+                .category-list__body { display: flex; overflow-x: auto; padding: 0 15px; gap: 15px; -webkit-overflow-scrolling: touch; }
                 .category-list__body::-webkit-scrollbar { display: none; }
-                .category-list__body .card { flex: 0 0 140px; width: 140px; }
+                .category-list__body .card { flex: 0 0 145px; width: 145px; }
             </style>`);
         }
     }
