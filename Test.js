@@ -3,10 +3,10 @@
 
     function KKPhim(object) {
         var network = new Lampa.Reguest();
+        // Cấu hình scroll chuẩn cho cả Touch và TV
         var scroll = new Lampa.Scroll({mask: true, over: true, step: 250});
         var items = [];
-        var html = $('<div></div>'); 
-        var body = $('<div class="category-full"></div>'); // Vùng chứa phim chuẩn lưới
+        var body = $('<div class="category-full"></div>'); // Lưới chứa phim
         
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
@@ -15,12 +15,11 @@
         var loading = false;
         var self = this;
 
-        // 1. Tạo giao diện
         this.create = function () {
-            html.append(scroll.render());
+            // Nhét nội dung trực tiếp vào Scroll
             scroll.append(body);
 
-            // Cuộn xuống cuối tự load trang tiếp theo
+            // Sự kiện vuốt đến cuối để load thêm
             scroll.onEnd = function () {
                 if (!loading && page < total_pages) {
                     page++;
@@ -32,11 +31,9 @@
             return this.render();
         };
 
-        // 2. Tải dữ liệu
         this.load = function () {
             loading = true;
             
-            // Hiện loading xịn của hệ thống Lampa (chỉ trang 1)
             if (page === 1 && this.activity) {
                 this.activity.loader(true); 
             }
@@ -67,7 +64,6 @@
             });
         };
 
-        // 3. Đổ phim vào màn hình
         this.append = function (data) {
             if (data.length === 0 && page === 1) {
                 this.empty('Không tìm thấy phim rồi ní ơi!');
@@ -86,6 +82,7 @@
                 var img = poster ? (poster.includes('http') ? poster : img_proxy + poster) : '';
                 card.find('.card__img').attr('src', img);
 
+                // Hỗ trợ cả Click (chuột/cảm ứng) và Enter (Remote)
                 card.on('hover:enter', function () {
                     self.getStream(item.slug, item.name);
                 });
@@ -95,13 +92,11 @@
                 items.push(card);
             });
 
-            // Tắt Loading gốc của hệ thống và đánh thức Controller
             if (this.activity) {
                 this.activity.loader(false);
                 this.activity.toggle(); 
             }
 
-            // Sửa triệt để lỗi getBoundingClientRect: Dùng Try Catch bảo vệ
             if (items.length > 0) {
                 try { scroll.update(); } catch(e) {}
             }
@@ -115,7 +110,6 @@
             }
         };
 
-        // 4. Kích hoạt điều khiển (Hàm bắt buộc của hệ thống)
         this.start = function () {
             Lampa.Controller.add('content', {
                 toggle: function () {
@@ -135,7 +129,6 @@
             Lampa.Controller.toggle('content');
         };
 
-        // Hàm phát phim
         this.getStream = function (slug, title) {
             if (window.Lampa && Lampa.Loading && typeof Lampa.Loading.active === 'function') {
                 try { Lampa.Loading.active(true); } catch(e){}
@@ -168,14 +161,17 @@
             });
         };
 
-        // Các hàm vòng đời để Lampa quản lý RAM
         this.pause = function () {};
         this.stop = function () {};
-        this.render = function () { return html; };
+        
+        // --- ĐIỂM SỬA QUAN TRỌNG CHO TOUCH ---
+        this.render = function () { 
+            return scroll.render(); // Lampa sẽ tự động gán class hỗ trợ cảm ứng vào đây
+        };
+        
         this.destroy = function () {
             network.clear();
             scroll.destroy();
-            html.remove();
             body.remove();
             items = [];
         };
