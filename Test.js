@@ -3,45 +3,44 @@
 
     function KKPhim(object) {
         var network = new Lampa.Reguest();
-        var scroll = new Lampa.Scroll({mask: true, over: true});
+        var scroll = new Lampa.Scroll({mask: true, over: true, step: 250});
         var items = [];
-        var html = $('<div class="category-full"></div>'); // Container dạng lưới
+        var html = $('<div></div>'); 
+        var body = $('<div class="category-full"></div>'); // Vùng chứa phim chuẩn lưới
         
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
         var page = 1;
         var total_pages = 1;
         var loading = false;
+        var self = this;
 
-        // --- Hàm quản lý Loading an toàn ---
-        function toggleLoading(active) {
-            if (window.Lampa && Lampa.Loading) {
-                if (typeof Lampa.Loading.active === 'function') Lampa.Loading.active(active);
-                else if (active && typeof Lampa.Loading.show === 'function') Lampa.Loading.show();
-                else if (!active && typeof Lampa.Loading.hide === 'function') Lampa.Loading.hide();
-            }
-        }
-
+        // 1. Tạo giao diện
         this.create = function () {
-            var self = this;
+            html.append(scroll.render());
+            scroll.append(body);
 
-            // Cơ chế cuộn vô tận giống lnum
+            // Cuộn xuống cuối tự load trang tiếp theo
             scroll.onEnd = function () {
                 if (!loading && page < total_pages) {
                     page++;
-                    self.start();
+                    self.load();
                 }
             };
 
-            this.start();
-            return scroll.render(); // Trả về scroll để Lampa quản lý Activity
+            this.load();
+            return this.render();
         };
 
-        this.start = function () {
-            var self = this;
-            if (loading) return;
+        // 2. Tải dữ liệu
+        this.load = function () {
             loading = true;
             
+            // Hiện loading xịn của hệ thống Lampa (chỉ trang 1)
+            if (page === 1 && this.activity) {
+                this.activity.loader(true); 
+            }
+
             var query = object.search || (object.movie && object.movie.title) || '';
             var url = '';
 
@@ -52,43 +51,37 @@
                 url += (url.includes('?') ? '&' : '?') + 'page=' + page;
             }
 
-            toggleLoading(true);
-
             network.silent(url, function (data) {
-                toggleLoading(false);
                 var raw_items = (data.data && data.data.items) ? data.data.items : (data.items || []);
                 
-                // Tính toán tổng số trang từ API KKPhim
                 var pagination = (data.data && data.data.params && data.data.params.pagination) ? data.data.params.pagination : (data.params && data.params.pagination ? data.params.pagination : null);
                 if (pagination) {
                     total_pages = Math.ceil(pagination.totalItems / pagination.totalItemsPerPage);
                 }
 
-                if (raw_items && raw_items.length > 0) {
-                    self.display(raw_items);
-                } else if (page === 1) {
-                    html.append('<div class="empty">Không tìm thấy phim rồi ní ơi!</div>');
-                }
+                self.append(raw_items);
                 loading = false;
             }, function () {
-                toggleLoading(false);
-                Lampa.Noty.show('Lỗi kết nối KKPhim!');
+                self.empty('Lỗi kết nối KKPhim!');
                 loading = false;
             });
         };
 
-        this.display = function (data) {
-            var self = this;
-            
+        // 3. Đổ phim vào màn hình
+        this.append = function (data) {
+            if (data.length === 0 && page === 1) {
+                this.empty('Không tìm thấy phim rồi ní ơi!');
+                return;
+            }
+
             data.forEach(function (item) {
                 if (!item) return;
 
                 var card = Lampa.Template.get('card', {
-                    title: item.name || 'Phim mới',
+                    title: item.name || 'Không rõ tên',
                     release_year: item.year || '2025'
                 });
 
-                // Xử lý Poster bảo mật
                 var poster = item.poster_url || item.thumb_url || '';
                 var img = poster ? (poster.includes('http') ? poster : img_proxy + poster) : '';
                 card.find('.card__img').attr('src', img);
@@ -98,40 +91,61 @@
                 });
 
                 card.addClass('selector');
-                html.append(card);
+                body.append(card);
+                items.push(card);
             });
 
-            // Gắn container vào bộ cuộn
-            scroll.append(html);
+            // Tắt Loading gốc của hệ thống và đánh thức Controller
+            if (this.activity) {
+                this.activity.loader(false);
+                this.activity.toggle(); 
+            }
 
-            // Fix lỗi getBoundingClientRect: Đợi DOM render xong mới update scroll
-            setTimeout(function() {
-                scroll.update();
-            }, 200);
-
-            this.enableController();
+            // Sửa triệt để lỗi getBoundingClientRect: Dùng Try Catch bảo vệ
+            if (items.length > 0) {
+                try { scroll.update(); } catch(e) {}
+            }
         };
 
-        this.enableController = function () {
+        this.empty = function (msg) {
+            body.append('<div class="empty">' + msg + '</div>');
+            if (this.activity) {
+                this.activity.loader(false);
+                this.activity.toggle();
+            }
+        };
+
+        // 4. Kích hoạt điều khiển (Hàm bắt buộc của hệ thống)
+        this.start = function () {
             Lampa.Controller.add('content', {
                 toggle: function () {
                     Lampa.Controller.collectionSet(scroll.render());
                     Lampa.Controller.collectionFocus(false, scroll.render());
                 },
-                up: function () {
-                    Lampa.Select.show(); 
+                left: function () {
+                    if (Lampa.Controller.collectionSet(scroll.render())) {
+                        Lampa.Controller.collectionFocus(false, scroll.render());
+                    }
                 },
-                back: function () {
-                    Lampa.Activity.backward();
-                }
+                right: function () {},
+                up: function () { Lampa.Select.show(); },
+                down: function () {},
+                back: function () { Lampa.Activity.backward(); }
             });
-            Lampa.Controller.enable('content');
+            Lampa.Controller.toggle('content');
         };
 
+        // Hàm phát phim
         this.getStream = function (slug, title) {
-            toggleLoading(true);
+            if (window.Lampa && Lampa.Loading && typeof Lampa.Loading.active === 'function') {
+                try { Lampa.Loading.active(true); } catch(e){}
+            }
+
             network.silent(api_host + 'phim/' + slug, function (data) {
-                toggleLoading(false);
+                if (window.Lampa && Lampa.Loading && typeof Lampa.Loading.active === 'function') {
+                    try { Lampa.Loading.active(false); } catch(e){}
+                }
+                
                 if (data && data.episodes && data.episodes.length > 0) {
                     var server = data.episodes[0].server_data;
                     if (server && server.length > 0) {
@@ -148,17 +162,27 @@
                             });
                         }
                     }
+                } else {
+                    Lampa.Noty.show('Chưa có tập phim!');
                 }
             });
         };
 
-        this.render = function () { return scroll.render(); };
+        // Các hàm vòng đời để Lampa quản lý RAM
+        this.pause = function () {};
+        this.stop = function () {};
+        this.render = function () { return html; };
+        this.destroy = function () {
+            network.clear();
+            scroll.destroy();
+            html.remove();
+            body.remove();
+            items = [];
+        };
     }
 
     function startPlugin() {
-        // Chặn trùng lặp menu
         if ($('.menu__item[data-action="kkphim"]').length > 0) return;
-        
         Lampa.Component.add('kkphim', KKPhim);
 
         var menu_list = [
@@ -169,7 +193,7 @@
         ];
 
         var menu_item = $('<li class="menu__item selector" data-action="kkphim">' +
-            '<div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 7L12 12L3 7L12 2L21 7Z" fill="#3498db"/><path d="M21 17L12 22L3 17" stroke="#3498db" stroke-width="2"/><path d="M21 12L12 17L3 12" stroke="#3498db" stroke-width="2"/></svg></div>' +
+            '<div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 7L12 12L3 7L12 2L21 7Z" fill="#2ecc71"/><path d="M21 17L12 22L3 17" stroke="#2ecc71" stroke-width="2"/><path d="M21 12L12 17L3 12" stroke="#2ecc71" stroke-width="2"/></svg></div>' +
             '<div class="menu__text">KKPhim</div>' +
             '</li>');
 
@@ -178,12 +202,7 @@
                 title: 'Danh mục KKPhim',
                 items: menu_list,
                 onSelect: function (sel) {
-                    Lampa.Activity.push({
-                        title: sel.title,
-                        url: sel.url,
-                        component: 'kkphim',
-                        page: 1
-                    });
+                    Lampa.Activity.push({ title: sel.title, url: sel.url, component: 'kkphim', page: 1 });
                 }
             });
         });
