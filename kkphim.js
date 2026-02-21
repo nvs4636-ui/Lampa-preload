@@ -1,16 +1,18 @@
 (function () {
     'use strict';
 
-    function startPlugin() {
-        // 1. Hàm tìm kiếm và xử lý lấy link
-        var startSearch = function (data) {
-            var title = data.movie.title || data.movie.name;
-            Lampa.Noty.show('Đang tìm: ' + title);
+    var KKPhimSource = function () {
+        // Hàm thực hiện tìm kiếm và phát phim
+        this.search = function (object) {
+            var title = object.movie.title || object.movie.name;
+            Lampa.Noty.show('Đang tìm nguồn cho: ' + title);
 
+            // Sử dụng đúng cấu trúc bạn vừa test thành công
             var url = 'https://phimapi.com/v1/api/tim-kiem?keyword=' + encodeURIComponent(title);
-            
+
             $.getJSON(url, function (res) {
                 var list = res.data ? res.data.items : [];
+                // Tìm phim (ưu tiên tên gốc hoặc tên tiếng Việt)
                 var movie = list.find(function(m) {
                     return m.name.toLowerCase() === title.toLowerCase() || 
                            m.origin_name.toLowerCase() === title.toLowerCase();
@@ -20,10 +22,10 @@
                     $.getJSON('https://phimapi.com/phim/' + movie.slug, function (detail) {
                         var episodes = detail.episodes[0].server_data;
                         
-                        // Nếu là phim bộ (>1 tập), hiện danh sách để chọn
                         if (episodes.length > 1) {
+                            // Hiện danh sách tập nếu là phim bộ
                             Lampa.Select.show({
-                                title: 'Chọn tập phim',
+                                title: detail.movie.name,
                                 items: episodes.map(function(e) { 
                                     return { title: e.name, url: e.link_m3u8 }; 
                                 }),
@@ -32,44 +34,50 @@
                                     Lampa.Player.playlist(episodes.map(e => ({ title: e.name, url: e.link_m3u8 })));
                                 }
                             });
-                        } else {
-                            // Phim lẻ phát luôn
+                        } else if (episodes.length === 1) {
+                            // Phát luôn nếu là phim lẻ
                             Lampa.Player.play({ url: episodes[0].link_m3u8, title: detail.movie.name });
                         }
                     });
                 } else {
-                    Lampa.Noty.show('Không tìm thấy nguồn trên KKPhim');
+                    Lampa.Noty.show('KKPhim không có phim này');
                 }
             });
         };
+    };
 
-        // 2. "Tiêm" nút bấm vào trang chi tiết phim (Full card)
+    function startPlugin() {
+        var source = new KKPhimSource();
+
+        // Lắng nghe sự kiện khi Lampa dựng xong trang chi tiết phim
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complite') {
-                var render = e.object.render();
-                // Tìm vị trí các nút bấm (như Trailer, Favorite...)
-                var container = render.find('.full-start__buttons');
+                var body = e.object.render();
                 
-                // Tạo nút KKPhim theo style chuẩn Lampa
-                var btn = $('<div class="full-start__button selector"><span>KKPhim</span></div>');
+                // Mẹo: Tìm bất kỳ thẻ nào có chữ "Trailer" hoặc "Watch" để chèn cạnh nó
+                var targetButton = body.find('.selector:contains("Trailer"), .selector:contains("Watch"), .selector:contains("Tập")').first();
                 
-                btn.on('click:select', function () {
-                    startSearch(e.data);
-                });
+                if (targetButton.length) {
+                    var kkBtn = $('<div class="full-start__button selector button--kkphim"><span>KKPhim</span></div>');
+                    
+                    kkBtn.on('click:select', function () {
+                        source.search(e.data);
+                    });
 
-                // Chèn nút vào danh sách
-                if (container.length) {
-                    container.append(btn);
-                    // Force để Lampa nhận diện có thêm item mới để di chuyển Remote
-                    e.object.context ? e.object.context() : null;
+                    targetButton.after(kkBtn);
+                } else {
+                    // Nếu không tìm thấy nút nào, chèn đại vào vùng chứa nút bấm
+                    body.find('.full-start__buttons').append('<div class="full-start__button selector button--kkphim"><span>KKPhim</span></div>').on('click:select', function(){
+                        source.search(e.data);
+                    });
                 }
             }
         });
 
-        console.log('KKPhim Plugin: Button Injected');
+        // Thêm một chút CSS để nút nổi bật
+        $('body').append('<style>.button--kkphim{background: #ff9800 !important; color: #000 !important; font-weight: bold !important;}</style>');
     }
 
-    // Đợi app sẵn sàng
     if (window.app_ready) startPlugin();
     else Lampa.Listener.follow('app', function (e) { if (e.type == 'ready') startPlugin(); });
 })();
