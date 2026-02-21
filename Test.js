@@ -1,14 +1,15 @@
 (function () {
     'use strict';
 
-    // 1. DỌN DẸP SẠCH SẼ CŨ
+    // --- BƯỚC 1: QUÉT SẠCH RÁC CŨ ---
     $('.menu__item[data-action="kkphim"]').remove();
-    $('#kk-style-lnum').remove();
+    $('[id^="kk-style"]').remove(); // Xóa tất cả các style có tên bắt đầu bằng kk-style
+    window.kkphim_inited = false; 
 
     function KKPhim(object) {
         var network = new Lampa.Reguest();
         var scroll = new Lampa.Scroll({mask: true, over: true, step: 250});
-        var body = $('<div class="kk-lnum-home"></div>');
+        var body = $('<div class="kk-lnum-wrapper"></div>');
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
         var self = this;
@@ -17,7 +18,7 @@
             if (!object.url) {
                 this.buildHome();
             } else {
-                this.loadCategory(object.url, object.title);
+                this.loadCategory(object.url);
             }
             return scroll.render();
         };
@@ -31,16 +32,16 @@
 
             categories.forEach(function (cat) {
                 var row = $(`
-                    <div class="kk-row">
-                        <div class="kk-row__header">
-                            <div class="kk-row__title">${cat.title}</div>
-                            <div class="kk-row__more selector">Xem thêm</div>
+                    <div class="kk-lnum-row">
+                        <div class="kk-lnum-header">
+                            <div class="kk-lnum-title">${cat.title}</div>
+                            <div class="kk-lnum-more selector">More</div>
                         </div>
-                        <div class="kk-row__content selector"></div>
+                        <div class="kk-lnum-content selector"></div>
                     </div>
                 `);
                 
-                row.find('.kk-row__more').on('click', function() {
+                row.find('.kk-lnum-more').on('click', function() {
                     Lampa.Activity.push({ title: cat.title, url: cat.url, component: 'kkphim', page: 1 });
                 });
 
@@ -48,7 +49,7 @@
                 
                 network.silent(cat.url + (cat.url.includes('?') ? '&' : '?') + 'page=1', function (data) {
                     var list = (data.data && data.data.items) ? data.data.items : (data.items || []);
-                    var content = row.find('.kk-row__content');
+                    var content = row.find('.kk-lnum-content');
                     
                     list.slice(0, 10).forEach(function (item) {
                         var card = Lampa.Template.get('card', { title: item.name, release_year: item.year });
@@ -61,14 +62,13 @@
                         });
                         content.append(card);
                     });
-                    // Quan trọng: Chỉ update scroll khi đã có nội dung để tránh lỗi getBoundingClientRect
-                    setTimeout(function() { scroll.update(); }, 200);
+                    setTimeout(function() { scroll.update(); }, 300);
                 });
             });
             scroll.append(body);
         };
 
-        this.loadCategory = function (url, title) {
+        this.loadCategory = function (url) {
             var grid = $('<div class="category-full"></div>');
             network.silent(url + (url.includes('?') ? '&' : '?') + 'page=1', function (data) {
                 var list = (data.data && data.data.items) ? data.data.items : (data.items || []);
@@ -86,7 +86,7 @@
         };
 
         this.getStream = function (slug, title) {
-            Lampa.Noty.show('Đang tải tập phim...');
+            Lampa.Noty.show('Đang lấy link...');
             network.silent(api_host + 'phim/' + slug, function (data) {
                 if (data && data.episodes && data.episodes[0].server_data.length > 0) {
                     var server = data.episodes[0].server_data;
@@ -115,56 +115,56 @@
         this.destroy = function () { network.clear(); scroll.destroy(); body.remove(); };
     }
 
+    // --- BƯỚC 2: CSS ÉP CHẾ ĐỘ SOLID (GIỐNG ẢNH LNUM MẪU) ---
+    function addStyle() {
+        if ($('#kk-style-final').length) return;
+        $('head').append(`<style id="kk-style-final">
+            /* Ép thanh bar dưới màu đen đặc, không trong suốt */
+            .bar { background: #000000 !important; opacity: 1 !important; border-top: 1px solid #222; }
+            .bar__item { opacity: 1 !important; }
+
+            /* Bố cục Home chuẩn LNUM */
+            .kk-lnum-wrapper { padding: 10px 0 100px 0; background: #141414; }
+            .kk-lnum-row { margin-bottom: 30px; }
+            .kk-lnum-header { display: flex; align-items: center; padding: 0 15px 8px; }
+            .kk-lnum-title { font-size: 1.6rem; font-weight: 700; color: #fff; flex-grow: 1; text-shadow: 1px 1px 2px #000; }
+            .kk-lnum-more { background: rgba(255,255,255,0.15); color: #fff; padding: 3px 12px; border-radius: 15px; font-size: 0.9rem; text-transform: uppercase; }
+            .kk-lnum-more.focus { background: #fff; color: #000; }
+
+            /* Cuộn ngang mượt cho Android Touch */
+            .kk-lnum-content { 
+                display: flex; 
+                overflow-x: auto; 
+                padding: 5px 15px; 
+                gap: 12px; 
+                -webkit-overflow-scrolling: touch; 
+            }
+            .kk-lnum-content::-webkit-scrollbar { display: none; }
+            
+            /* Card phim đẹp hơn */
+            .kk-lnum-content .card { flex: 0 0 140px; width: 140px; border: none !important; background: transparent !important; }
+            .kk-lnum-content .card__img { border-radius: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); }
+            .kk-lnum-content .card__title { font-size: 0.95rem !important; margin-top: 6px; line-height: 1.2; }
+            
+            /* Fix lỗi văng màn hình xanh */
+            .category-full { display: flex; flex-wrap: wrap; padding: 15px; gap: 10px; min-height: 100vh; }
+        </style>`);
+    }
+
     function startPlugin() {
         Lampa.Component.add('kkphim', KKPhim);
+        addStyle();
 
         var menu_item = $('<li class="menu__item selector" data-action="kkphim">' +
-            '<div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="#e74c3c"><path d="M21 7L12 12L3 7L12 2L21 7ZM21 17L12 22L3 17M21 12L12 17L3 12" stroke="#fff" stroke-width="1"/></svg></div>' +
+            '<div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="#e74c3c"><path d="M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z"/></svg></div>' +
             '<div class="menu__text">KKPhim</div>' +
             '</li>');
 
         menu_item.on('click', function () {
-            Lampa.Activity.push({ title: 'KKPhim Home', component: 'kkphim', page: 1 });
+            Lampa.Activity.push({ title: 'KKPhim', component: 'kkphim', page: 1 });
         });
 
         $('.menu .menu__list').append(menu_item);
-
-        // 2. CSS ÉP CHẾ ĐỘ "SOLID" GIỐNG LNUM
-        if (!$('#kk-style-lnum').length) {
-            $('head').append(`<style id="kk-style-lnum">
-                /* Fix thanh bar dưới: Đen đặc, không trong suốt */
-                .bar { background: #0a0a0a !important; opacity: 1 !important; height: 70px !important; display: flex !important; }
-                .bar__item { opacity: 1 !important; }
-
-                /* Nền tổng thể trang chủ */
-                .kk-lnum-home { padding: 20px 0 100px 0; background: #141414; min-height: 100vh; }
-                
-                /* Hàng phim chuẩn LNUM */
-                .kk-row { margin-bottom: 35px; }
-                .kk-row__header { display: flex; align-items: center; padding: 0 20px 10px 20px; }
-                .kk-row__title { font-size: 1.7rem; font-weight: bold; color: #fff; flex-grow: 1; text-transform: uppercase; letter-spacing: 1px; }
-                .kk-row__more { background: rgba(255,255,255,0.1); color: #ccc; padding: 4px 12px; border-radius: 4px; font-size: 1rem; transition: all 0.2s; }
-                .kk-row__more.focus { background: #fff; color: #000; }
-                
-                /* Cuộn ngang mượt mà */
-                .kk-row__content { 
-                    display: flex; 
-                    overflow-x: auto; 
-                    padding: 10px 20px; 
-                    gap: 15px; 
-                    -webkit-overflow-scrolling: touch; 
-                }
-                .kk-row__content::-webkit-scrollbar { display: none; }
-                
-                /* Kích thước Card giống ảnh LNUM ní gửi */
-                .kk-row__content .card { flex: 0 0 145px; width: 145px; border: none !important; }
-                .kk-row__content .card__img { border-radius: 6px; }
-                .kk-row__content .card__title { font-size: 1rem !important; color: #fff; margin-top: 5px; height: 2.4em; overflow: hidden; }
-
-                /* Fix lỗi văng xanh: Đảm bảo vùng chứa luôn có kích thước */
-                .category-full { display: flex; flex-wrap: wrap; padding: 20px; gap: 15px; min-height: 500px; }
-            </style>`);
-        }
     }
 
     if (window.appready) startPlugin();
