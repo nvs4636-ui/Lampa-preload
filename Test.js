@@ -1,33 +1,30 @@
 (function () {
     'use strict';
 
-    // Dọn dẹp tuyệt đối các tàn dư
+    // Xóa dấu vết cũ để không bị trùng lặp
     $('.menu__item[data-action="kkphim"]').remove();
-    $('[id^="kk-style"]').remove();
 
     function KKPhim(object) {
         var network = new Lampa.Reguest();
-        var scroll = new Lampa.Scroll({mask: true, over: true});
-        var items = [];
+        var scroll  = new Lampa.Scroll({mask: true, over: true});
+        var items   = [];
+        var html    = $('<div class="category-full"></div>'); // Dùng đúng class của LNUM
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
-        var self = this;
-
-        // Dùng class 'category-full' gốc của Lampa để tận dụng CSS hệ thống
-        var body = $('<div class="category-full"></div>');
+        var self    = this;
 
         this.create = function () {
             var url = object.url || (api_host + 'danh-sach/phim-moi-cap-nhat');
             
             network.silent(url + (url.includes('?') ? '&' : '?') + 'page=' + (object.page || 1), function (data) {
-                var raw_items = (data.data && data.data.items) ? data.data.items : (data.items || []);
-                if (raw_items.length) {
-                    self.build(raw_items);
+                var list = (data.data && data.data.items) ? data.data.items : (data.items || []);
+                if (list.length) {
+                    self.build(list);
                 } else {
-                    Lampa.Noty.show('Không có dữ liệu!');
+                    html.append('<div class="empty">Không có dữ liệu rồi ní!</div>');
                 }
             }, function () {
-                Lampa.Noty.show('Lỗi kết nối API!');
+                Lampa.Noty.show('Lỗi kết nối KKPhim!');
             });
 
             return scroll.render();
@@ -35,7 +32,7 @@
 
         this.build = function (data) {
             data.forEach(function (item) {
-                // Lấy template 'card' gốc của app - Đảm bảo đẹp 100% như LNUM
+                // Sử dụng Template chuẩn của Lampa giống LNUM
                 var card = Lampa.Template.get('card', {
                     title: item.name,
                     release_year: item.year || '2025'
@@ -44,25 +41,25 @@
                 var poster = item.poster_url || item.thumb_url || '';
                 card.find('.card__img').attr('src', poster.includes('http') ? poster : img_proxy + poster);
 
-                // Thêm class selector để app nhận diện tiêu điểm và vuốt chạm
                 card.addClass('selector');
 
+                // Sự kiện Click chuẩn Lampa
                 card.on('click hover:enter', function (e) {
                     e.preventDefault();
                     self.getStream(item.slug, item.name);
                 });
 
-                body.append(card);
+                html.append(card);
                 items.push(card);
             });
 
-            scroll.append(body);
+            scroll.append(html);
             if (this.activity) this.activity.loader(false);
             scroll.update();
         };
 
         this.getStream = function (slug, title) {
-            Lampa.Noty.show('Đang lấy link phim...');
+            Lampa.Noty.show('Đang tải link...');
             network.silent(api_host + 'phim/' + slug, function (data) {
                 if (data && data.episodes && data.episodes[0].server_data.length > 0) {
                     var server = data.episodes[0].server_data;
@@ -76,7 +73,7 @@
                         }
                     });
                 } else {
-                    Lampa.Noty.show('Phim này chưa có link ní ơi!');
+                    Lampa.Noty.show('Phim chưa có link!');
                 }
             });
         };
@@ -99,13 +96,14 @@
         this.destroy = function () {
             network.clear();
             scroll.destroy();
-            body.remove();
+            html.remove();
         };
     }
 
     function startPlugin() {
         Lampa.Component.add('kkphim', KKPhim);
 
+        // Tạo menu giống LNUM nhưng màu đỏ KKPhim
         var menu_item = $('<li class="menu__item selector" data-action="kkphim">' +
             '<div class="menu__ico"><svg width="36" height="36" viewBox="0 0 24 24" fill="#e74c3c"><path d="M12 2L4 5V11C4 16.1 7.4 20.8 12 22C16.6 20.8 20 16.1 20 11V5L12 2Z"/></svg></div>' +
             '<div class="menu__text">KKPhim</div>' +
@@ -113,11 +111,12 @@
 
         menu_item.on('click', function () {
             Lampa.Select.show({
-                title: 'Danh Mục KKPhim',
+                title: 'KKPhim',
                 items: [
                     { title: 'Phim Mới Cập Nhật', url: 'https://phimapi.com/danh-sach/phim-moi-cap-nhat' },
                     { title: 'Phim Lẻ', url: 'https://phimapi.com/v1/api/danh-sach/phim-le' },
-                    { title: 'Phim Bộ', url: 'https://phimapi.com/v1/api/danh-sach/phim-bo' }
+                    { title: 'Phim Bộ', url: 'https://phimapi.com/v1/api/danh-sach/phim-bo' },
+                    { title: 'Hoạt Hình', url: 'https://phimapi.com/v1/api/danh-sach/hoat-hinh' }
                 ],
                 onSelect: function (sel) {
                     Lampa.Activity.push({
