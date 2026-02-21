@@ -1,73 +1,89 @@
 (function () {
     'use strict';
 
-    function startPlugin() {
-        // 1. Định nghĩa bộ tìm kiếm nguồn KKPhim
-        var KKPhimSource = function() {
-            this.search = function(object, callback) {
-                var title = object.movie.original_title || object.movie.title || object.movie.name;
-                var url = 'https://phimapi.com/v1/api/tim-kiem?keyword=' + encodeURIComponent(title);
+    if (!window.Lampa) return;
 
-                $.ajax({
-                    url: url,
-                    dataType: 'json',
-                    success: function(res) {
-                        var list = res.data ? res.data.items : [];
-                        if (list.length > 0) {
-                            // Nếu tìm thấy, trả về một "Source" cho Lampa
-                            callback([{
-                                name: 'KKPhim',
-                                title: 'Xem Online (KKPhim)',
-                                method: function(call_success) {
-                                    $.getJSON('https://phimapi.com/phim/' + list[0].slug, function(detail) {
-                                        var eps = detail.episodes[0].server_data;
-                                        var playlist = eps.map(e => ({ title: e.name, url: e.link_m3u8 }));
-                                        
-                                        Lampa.Player.play({
-                                            url: eps[0].link_m3u8,
-                                            title: detail.movie.name
-                                        });
-                                        Lampa.Player.playlist(playlist);
-                                        call_success();
-                                    });
-                                }
-                            }]);
-                        } else {
-                            callback([]);
-                        }
-                    },
-                    error: function() { callback([]); }
+    const API = 'https://phimapi.com/v1/api';
+
+    function fetchJSON(url) {
+        return fetch(url).then(r => r.json());
+    }
+
+    Lampa.Plugin.add('KKPhim Online', {
+        type: 'online',
+
+        // bước 1: Lampa gọi khi bấm phim
+        search: function (item) {
+            let keyword = item.original_title || item.title;
+            let url = API + '/tim-kiem?keyword=' + encodeURIComponent(keyword);
+
+            return fetchJSON(url).then(json => {
+                let items = json?.data?.items || [];
+
+                let matched = items.filter(m => {
+                    if (item.type === 'movie' && m.type !== 'single') return false;
+                    if (item.type === 'tv' && m.type !== 'series') return false;
+
+                    if (item.year && m.year) {
+                        if (Math.abs(item.year - m.year) > 1) return false;
+                    }
+                    return true;
                 });
-            };
-        };
 
-        // 2. ÉP BUỘC CHÈN NÚT VÀO THANH CÔNG CỤ (Sửa lỗi hiển thị liệt menu)
-        Lampa.Listener.follow('full', function (e) {
-            if (e.type == 'complite') {
-                var render = e.object.render();
-                
-                // Tạo một nút bấm độc lập, không phụ thuộc vào class của bản Mod
-                var kkBtn = $('<div class="full-start__button selector kk-special-btn" style="background: #e67e22 !important; color: #fff !important; margin-top: 10px; border-radius: 8px; display: block; width: 100%; text-align: center; padding: 12px 0; font-weight: bold;">KKPHIM: XEM NGAY</div>');
+                return matched.map(m => ({
+                    title: m.name,
+                    slug: m.slug,
+                    server: 'KKPhim'
+                }));
+            });
+        },
 
-                kkBtn.on('click:select', function () {
-                    var s = new KKPhimSource();
-                    s.search(e.data, function(sources) {
-                        if (sources.length > 0) sources[0].method(function(){});
-                        else Lampa.Noty.show('KKPhim không có phim này');
+        // bước 2: Lampa gọi để play
+        play: function (source, item) {
+            let url = API + '/phim/' + source.slug;
+
+            return fetchJSON(url).then(json => {
+                let movie = json.movie;
+                let episodes = json.episodes || [];
+
+                // 🎬 PHIM LẺ
+                if (movie.type === 'single') {
+                    let links = [];
+
+                    episodes.forEach(server => {
+                        server.server_data.forEach(v => {
+                            if (v.link_m3u8) {
+                                links.push({
+                                    url: v.link_m3u8,
+                                    quality: 'auto',
+                                    server: 'KKPhim'
+                                });
+                            }
+                        });
+                    });
+
+                    return links;
+                }
+
+                // 📺 PHIM BỘ
+                let playlist = [];
+
+                episodes.forEach(server => {
+                    server.server_data.forEach(ep => {
+                        if (ep.link_m3u8) {
+                            playlist.push({
+                                title: ep.name,
+                                url: ep.link_m3u8,
+                                quality: 'auto',
+                                server: 'KKPhim'
+                            });
+                        }
                     });
                 });
 
-                // Chèn vào vị trí 'an toàn' nhất: Dưới cùng của phần giới thiệu phim
-                var footer = render.find('.full-start__left, .full-start__content').last();
-                if (footer.length) {
-                    footer.append(kkBtn);
-                    // Cập nhật lại danh sách selector để Remote có thể di chuyển vào nút
-                    if (e.object.context) e.object.context();
-                }
-            }
-        });
-    }
+                return playlist;
+            });
+        }
+    });
 
-    if (window.app_ready) startPlugin();
-    else Lampa.Listener.follow('app', function (e) { if (e.type == 'ready') startPlugin(); });
 })();
