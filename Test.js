@@ -6,8 +6,7 @@
     Lampa.Plugin.add('KKPhim Test', {
         type: 'online',
 
-        search: function (item) {
-            // chỉ trả 1 button test
+        play: function (source, item) {
             return Promise.resolve([
                 {
                     title: 'Test button',
