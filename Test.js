@@ -5,8 +5,7 @@
         var network = new Lampa.Reguest();
         var scroll = new Lampa.Scroll({mask: true, over: true});
         var items = [];
-        var html = $('<div class="category-full"></div>'); // Container chính
-        var body = $('<div class="category-full"></div>'); // Nơi chứa các card phim
+        var html = $('<div class="category-full"></div>'); // Container dạng lưới
         
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
@@ -14,7 +13,7 @@
         var total_pages = 1;
         var loading = false;
 
-        // Hàm hiện Loading an toàn
+        // --- Hàm quản lý Loading an toàn ---
         function toggleLoading(active) {
             if (window.Lampa && Lampa.Loading) {
                 if (typeof Lampa.Loading.active === 'function') Lampa.Loading.active(active);
@@ -26,23 +25,16 @@
         this.create = function () {
             var self = this;
 
-            // Xử lý Infinite Scroll (Cuộn đến đâu load đến đó)
-            scroll.onWheel = function (delta) {
-                if (delta > 0 && !loading && page < total_pages) {
-                    if (scroll.isScrolledToBottom()) {
-                        page++;
-                        self.start();
-                    }
+            // Cơ chế cuộn vô tận giống lnum
+            scroll.onEnd = function () {
+                if (!loading && page < total_pages) {
+                    page++;
+                    self.start();
                 }
             };
 
-            // Gắn kết cấu: html -> scroll -> body
-            html.append(scroll.render());
-            scroll.append(body);
-
             this.start();
-
-            return this.render();
+            return scroll.render(); // Trả về scroll để Lampa quản lý Activity
         };
 
         this.start = function () {
@@ -66,7 +58,7 @@
                 toggleLoading(false);
                 var raw_items = (data.data && data.data.items) ? data.data.items : (data.items || []);
                 
-                // Tính toán tổng số trang
+                // Tính toán tổng số trang từ API KKPhim
                 var pagination = (data.data && data.data.params && data.data.params.pagination) ? data.data.params.pagination : (data.params && data.params.pagination ? data.params.pagination : null);
                 if (pagination) {
                     total_pages = Math.ceil(pagination.totalItems / pagination.totalItemsPerPage);
@@ -75,7 +67,7 @@
                 if (raw_items && raw_items.length > 0) {
                     self.display(raw_items);
                 } else if (page === 1) {
-                    body.append('<div class="empty">Không tìm thấy phim nào ní ơi!</div>');
+                    html.append('<div class="empty">Không tìm thấy phim rồi ní ơi!</div>');
                 }
                 loading = false;
             }, function () {
@@ -92,28 +84,30 @@
                 if (!item) return;
 
                 var card = Lampa.Template.get('card', {
-                    title: item.name || 'Không rõ tên',
+                    title: item.name || 'Phim mới',
                     release_year: item.year || '2025'
                 });
 
-                // Xử lý Poster
+                // Xử lý Poster bảo mật
                 var poster = item.poster_url || item.thumb_url || '';
                 var img = poster ? (poster.includes('http') ? poster : img_proxy + poster) : '';
                 card.find('.card__img').attr('src', img);
 
-                // Khi nhấn vào phim
                 card.on('hover:enter', function () {
                     self.getStream(item.slug, item.name);
                 });
 
                 card.addClass('selector');
-                body.append(card);
+                html.append(card);
             });
 
-            // Quan trọng: Chỉ update scroll sau khi các card đã được append vào body
+            // Gắn container vào bộ cuộn
+            scroll.append(html);
+
+            // Fix lỗi getBoundingClientRect: Đợi DOM render xong mới update scroll
             setTimeout(function() {
                 scroll.update();
-            }, 100);
+            }, 200);
 
             this.enableController();
         };
@@ -125,8 +119,7 @@
                     Lampa.Controller.collectionFocus(false, scroll.render());
                 },
                 up: function () {
-                    // Nếu ở hàng trên cùng, cho phép mở menu Select danh mục
-                    Lampa.Select.show();
+                    Lampa.Select.show(); 
                 },
                 back: function () {
                     Lampa.Activity.backward();
@@ -159,10 +152,11 @@
             });
         };
 
-        this.render = function () { return html; };
+        this.render = function () { return scroll.render(); };
     }
 
     function startPlugin() {
+        // Chặn trùng lặp menu
         if ($('.menu__item[data-action="kkphim"]').length > 0) return;
         
         Lampa.Component.add('kkphim', KKPhim);
