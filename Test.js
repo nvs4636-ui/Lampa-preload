@@ -10,6 +10,19 @@
         var api_host = 'https://phimapi.com/';
         var img_proxy = 'https://phimimg.com/';
 
+        // Hàm hiện loading an toàn
+        function showLoading() {
+            if (window.Lampa && Lampa.Loading && typeof Lampa.Loading.show === 'function') {
+                Lampa.Loading.show();
+            }
+        }
+
+        function hideLoading() {
+            if (window.Lampa && Lampa.Loading && typeof Lampa.Loading.hide === 'function') {
+                Lampa.Loading.hide();
+            }
+        }
+
         this.create = function () {
             this.start();
             return this.render();
@@ -28,19 +41,19 @@
                 url += (url.includes('?') ? '&' : '?') + 'page=' + page;
             }
 
-            Lampa.Loading.show();
+            showLoading();
             network.silent(url, function (data) {
-                Lampa.Loading.hide();
+                hideLoading();
                 var raw_items = (data.data && data.data.items) ? data.data.items : (data.items || []);
                 
                 if (raw_items.length > 0) {
                     if (page === 1) html.empty();
                     self.display(raw_items);
                 } else {
-                    Lampa.Noty.show('Không có dữ liệu!');
+                    Lampa.Noty.show('Danh mục này hiện chưa có phim ní ơi!');
                 }
             }, function () {
-                Lampa.Loading.hide();
+                hideLoading();
                 Lampa.Noty.show('Lỗi kết nối KKPhim!');
             });
         };
@@ -52,8 +65,11 @@
                     title: item.name,
                     release_year: item.year || '2024'
                 });
+                
+                // Fix poster không hiện
                 var img = item.poster_url.includes('http') ? item.poster_url : img_proxy + item.poster_url;
                 card.find('.card__img').attr('src', img);
+
                 card.on('hover:enter', function () {
                     self.getStream(item.slug, item.name);
                 });
@@ -63,9 +79,9 @@
         };
 
         this.getStream = function (slug, title) {
-            Lampa.Loading.show();
+            showLoading();
             network.silent(api_host + 'phim/' + slug, function (data) {
-                Lampa.Loading.hide();
+                hideLoading();
                 if (data && data.episodes && data.episodes[0].server_data.length > 0) {
                     var episodes = data.episodes[0].server_data;
                     if (episodes.length === 1) {
@@ -88,9 +104,8 @@
     }
 
     function startPlugin() {
-        // Kiểm tra nếu đã có menu KKPhim rồi thì không add thêm nữa để tránh trùng lặp
-        if (window.kkphim_plugin_loaded) return;
-        window.kkphim_plugin_loaded = true;
+        // 1. Kiểm tra chống trùng lặp menu (Dùng ID riêng)
+        if ($('.menu__item[data-action="kkphim"]').length > 0) return;
 
         Lampa.Component.add('kkphim', KKPhim);
 
@@ -121,7 +136,7 @@
             });
         });
 
-        // Chỉ add vào sau mục "Shots" hoặc cuối danh sách menu
+        // 2. Chèn vào cuối danh sách menu
         $('.menu .menu__list').append(menu_item);
     }
 
