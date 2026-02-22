@@ -15,11 +15,10 @@
         var self = this;
         this.network = new Lampa.Reguest();
 
-        // FIX ẢNH: Trả về object thay vì string để Lampa không tự nối domain TMDB vào
+        // FIX ẢNH: Trả về link trực tiếp và ép Lampa không can thiệp
         function fixImageUrl(url) {
             if (!url) return './img/img_broken.svg';
-            var final_url = url.indexOf('http') === 0 ? url : IMG_PROXY + url;
-            return final_url;
+            return url.indexOf('http') === 0 ? url : IMG_PROXY + url;
         }
 
         function normalizeData(json) {
@@ -31,14 +30,15 @@
                         id: item.slug,
                         title: item.name,
                         name: item.name,
-                        // Quan trọng: Gán thẳng vào trường này để Card không bị lỗi hiện chữ
                         img: img,
                         poster_path: img, 
                         backdrop_path: img,
                         vote_average: 8.0,
                         release_date: item.year || '2026',
+                        // Fix triệt để lỗi join() bằng cách tạo mảng thật
                         origin_country: ['VN'],
-                        production_countries: [{name: 'Vietnam'}], // Triệt tiêu lỗi join()
+                        production_countries: [{name: 'Vietnam'}],
+                        genres: item.category || [],
                         source: SOURCE_NAME
                     };
                 }),
@@ -47,6 +47,7 @@
             };
         }
 
+        // HÀM LIST CHO NÚT "XEM THÊM"
         this.list = function (params, onComplete, onError) {
             var url = params.url || (API_BASE + BASE_CATEGORIES.new);
             var page = params.page || 1;
@@ -68,12 +69,12 @@
                             results: normalized.results,
                             url: url,
                             source: SOURCE_NAME,
-                            // ĐÂY LÀ NÚT MORE NÈ NÍ! Hiện ngay tiêu đề hàng
-                            more: true 
+                            more: true // Kích hoạt nút "Xem thêm" cạnh tiêu đề
                         });
                     }, function() { callback({results: []}); });
                 });
             });
+            // partsLimit = 3 để tránh lag khi load trang chủ
             Lampa.Api.partNext(partsData, 3, onSuccess, onError);
         };
 
@@ -82,6 +83,7 @@
             this.network.silent(API_BASE + 'phim/' + slug, function (data) {
                 if (data && data.movie) {
                     var m = data.movie;
+                    // Hiện bảng chọn tập ngay lập tức
                     Lampa.Select.show({
                         title: m.name,
                         items: data.episodes[0].server_data.map(function(ep) { 
@@ -106,8 +108,8 @@
     }
 
     function startPlugin() {
-        if (window.kk_v3_loaded) return;
-        window.kk_v3_loaded = true;
+        if (window.kk_v4_loaded) return;
+        window.kk_v4_loaded = true;
 
         Lampa.Api.sources[SOURCE_NAME] = new KKPhimApiService();
 
@@ -118,15 +120,19 @@
         });
         $('.menu .menu__list').append(menu);
 
-        // CSS FIX TRIỆT ĐỂ ẢNH LỖI
+        // CSS FIX TRIỆT ĐỂ ẢNH ĐÈ CHỮ
         $('head').append(`
             <style>
-                /* Nếu Lampa vẫn cố tình chèn URL rác vào src, ta dùng CSS ép nó biến mất hoặc chỉ hiện ảnh nền */
+                /* Thủ thuật: Nếu src chứa "https" sau domain TMDB, ta ẩn cái src đó đi để hiện background-image sạch */
                 .card__img[src*="image.tmdb.org/t/p/w300/https"] {
-                    object-position: 200% 200% !important; /* Đẩy cái đống chữ ra khỏi khung hình */
+                    opacity: 0 !important;
                 }
-                .card__img { background-size: cover !important; object-fit: cover !important; }
-                .card__title { font-size: 1.1em !important; }
+                .card__img { 
+                    background-color: #1a1a1a; 
+                    object-fit: cover !important; 
+                }
+                .card__title { font-size: 1.1em !important; color: #fff; }
+                .bar { background: #000 !important; }
             </style>
         `);
     }
