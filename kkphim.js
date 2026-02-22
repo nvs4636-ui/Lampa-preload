@@ -6,9 +6,8 @@
         var scroll = new Lampa.Scroll({mask: true, over: true, check_bottom: true});
         var items = [];
         var html = $('<div></div>');
-        var body = $('<div class="category-full"></div>');
         
-        // Giữ nguyên các danh mục theo ý bạn
+        // Danh sách các mục bạn muốn hiển thị đồng thời
         var categories = [
             { title: 'Phim Mới Cập Nhật', url: 'https://kkphim.vip/api/v1/danh-sach/phim-moi-cap-nhat' },
             { title: 'Phim Lẻ', url: 'https://kkphim.vip/api/v1/danh-sach/phim-le' },
@@ -18,29 +17,23 @@
 
         this.create = function () {
             var _this = this;
-            // Bố cục Menu ngang/dọc theo style mẫu
-            var menu = $('<div class="category-full__menu"></div>');
+
+            // Lặp qua từng danh mục để tạo hàng phim
             categories.forEach(function(cat) {
-                var item = $('<div class="category-full__menu-item selector">' + cat.title + '</div>');
-                item.on('hover:enter', function() {
-                    _this.loadCategory(cat.url);
-                });
-                menu.append(item);
+                _this.buildRow(cat);
             });
 
-            html.append(menu);
-            html.append(body);
             scroll.append(html);
-            
-            this.loadCategory(categories[0].url);
             return scroll.render();
         };
 
-        this.loadCategory = function (url) {
-            body.empty();
-            network.silent(url + '?page=1', function (json) {
+        this.buildRow = function (cat) {
+            var row = $('<div class="category-full"><div class="category-full__title" style="padding: 20px 0 10px 20px; font-size: 1.5em; font-weight: bold;">' + cat.title + '</div><div class="category-full__body"></div></div>');
+            var body = row.find('.category-full__body');
+
+            network.silent(cat.url + '?page=1', function (json) {
                 if (json.status && json.data.items) {
-                    json.data.items.forEach(function (item) {
+                    json.data.items.slice(0, 10).forEach(function (item) { // Lấy 10 phim mỗi hàng
                         var card = Lampa.Template.get('card', {
                             title: item.name,
                             release_year: item.year
@@ -48,47 +41,29 @@
 
                         card.find('.card__img').attr('src', 'https://phimimg.com/' + item.poster_url);
                         
-                        // PHẦN PHÁT PHIM LUÔN
+                        // Xử lý phát phim ngay lập tức
                         card.on('hover:enter', function () {
-                            Lampa.Select.show({
-                                title: 'Đang lấy link...',
-                                items: [{ title: 'Chờ trong giây lát' }]
-                            });
-
-                            // Gọi API chi tiết để lấy link m3u8
+                            Lampa.Noty.show('Đang lấy link phim...');
                             var detailUrl = 'https://kkphim.vip/api/v1/phim/' + item.slug;
+                            
                             network.silent(detailUrl, function(detail) {
-                                Lampa.Select.close();
                                 if(detail.status && detail.movie.episodes[0].server_data[0]) {
                                     var videoData = detail.movie.episodes[0].server_data[0];
-                                    
-                                    // Gọi trình phát của Lampa
                                     Lampa.Player.play({
                                         url: videoData.link_m3u8,
-                                        title: item.name,
-                                        video: {
-                                            title: item.name,
-                                            url: videoData.link_m3u8
-                                        }
+                                        title: item.name
                                     });
-                                    
-                                    Lampa.Player.playlist([
-                                        {
-                                            title: item.name,
-                                            url: videoData.link_m3u8
-                                        }
-                                    ]);
                                 } else {
-                                    Lampa.Noty.show('Không tìm thấy link phim!');
+                                    Lampa.Noty.show('Lỗi lấy link!');
                                 }
                             });
                         });
 
                         body.append(card);
                     });
-                    Lampa.Controller.enable('content');
                 }
             });
+            html.append(row);
         };
 
         this.start = function () {
@@ -100,25 +75,25 @@
             });
             Lampa.Controller.enable('content');
         };
+
         this.pause = function () {};
         this.stop = function () {};
     }
 
-    // Đăng ký Plugin vào Menu trái của Lampa
+    // Tích hợp vào Menu chính
     if (!window.kkphim_plugin_initialized) {
         Lampa.Component.add('kkphim', KKPhim);
 
         var addMenuItem = function() {
             var menu_item = $('<li class="menu__item selector" data-action="kkphim">' +
-                '<div class="menu__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>' +
-                '<div class="menu__text">KKPhim</div>' +
+                '<div class="menu__ico"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M2 8L12 2L22 8V22H2V8Z"/></svg></div>' +
+                '<div class="menu__text">KKPhim Full</div>' +
             '</li>');
 
             menu_item.on('hover:enter', function() {
                 Lampa.Activity.push({
                     title: 'KKPhim',
-                    component: 'kkphim',
-                    page: 1
+                    component: 'kkphim'
                 });
             });
 
